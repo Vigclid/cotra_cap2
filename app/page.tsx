@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { CharacterExplorer } from "@/components/CharacterExplorer";
 import { Footer } from "@/components/Footer";
+import { GameCorner } from "@/components/games/GameCorner";
 import { Header } from "@/components/Header";
 import { Hero } from "@/components/Hero";
 import { HistoryPanel } from "@/components/HistoryPanel";
@@ -13,7 +14,7 @@ import { useHistory } from "@/hooks/useHistory";
 import { useTheme } from "@/hooks/useTheme";
 import type { HistoryItem, RewriteResult } from "@/lib/types";
 
-type Tab = "outline" | "rewrite" | "characters";
+type Tab = "outline" | "rewrite" | "characters" | "games";
 
 const TABS: { id: Tab; emoji: string; title: string; subtitle: string; active: string }[] = [
   {
@@ -37,7 +38,17 @@ const TABS: { id: Tab; emoji: string; title: string; subtitle: string; active: s
     subtitle: "Nghe chuyện & phỏng vấn",
     active: "bg-mint-pastel ring-emerald-300 dark:ring-emerald-700",
   },
+  {
+    id: "games",
+    emoji: "🎮",
+    title: "Góc Giải Trí",
+    subtitle: "Mini-game nhận EXP",
+    active: "bg-lemon-pastel ring-amber-300 dark:ring-amber-700",
+  },
 ];
+
+/** Các tab không cần cột Lịch sử bên phải. */
+const FULL_WIDTH_TABS: Tab[] = ["characters", "games"];
 
 export default function Home() {
   const [tab, setTab] = useState<Tab>("outline");
@@ -65,6 +76,7 @@ export default function Home() {
   };
 
   const missions = Math.floor(game.exp / 10);
+  const fullWidth = FULL_WIDTH_TABS.includes(tab);
 
   return (
     <>
@@ -80,7 +92,7 @@ export default function Home() {
           }
         />
 
-        <nav id="workspace" className="grid scroll-mt-28 grid-cols-1 gap-3 sm:grid-cols-3" role="tablist">
+        <nav id="workspace" className="grid scroll-mt-28 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4" role="tablist">
           {TABS.map((t) => (
             <button
               key={t.id}
@@ -105,7 +117,7 @@ export default function Home() {
           ))}
         </nav>
 
-        <div className={`grid gap-6 ${tab === "characters" ? "" : "lg:grid-cols-[1fr_300px]"}`}>
+        <div className={`grid gap-6 ${fullWidth ? "" : "lg:grid-cols-[1fr_300px]"}`}>
           <section role="tabpanel">
             {tab === "outline" && (
               <OutlineTool
@@ -132,9 +144,10 @@ export default function Home() {
               />
             )}
             {tab === "characters" && <CharacterExplorer onSuccess={() => game.addExp()} />}
+            {tab === "games" && <GameCorner onReward={game.addExp} />}
           </section>
 
-          {tab !== "characters" && (
+          {!fullWidth && (
             <HistoryPanel
               items={history.items}
               onOpen={openHistory}

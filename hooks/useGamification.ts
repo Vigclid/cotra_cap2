@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { fireConfetti } from "@/lib/confetti";
 import { useLocalStorage } from "./useLocalStorage";
 
 export const EXP_PER_ACTION = 10;
@@ -18,18 +19,11 @@ export const LEVELS: Level[] = [
 
 export const getLevel = (exp: number) => LEVELS.findLast((l) => exp >= l.min) ?? LEVELS[0];
 
-async function fireConfetti() {
-  const confetti = (await import("canvas-confetti")).default;
-  const colors = ["#FCE7F3", "#E0F2FE", "#D1FAE5", "#FDE68A", "#F9A8D4", "#7DD3FC"];
-  confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 }, colors });
-  setTimeout(() => confetti({ particleCount: 60, angle: 60, spread: 60, origin: { x: 0 }, colors }), 250);
-  setTimeout(() => confetti({ particleCount: 60, angle: 120, spread: 60, origin: { x: 1 }, colors }), 400);
-}
-
 export function useGamification() {
   const [exp, setExp, loaded] = useLocalStorage<number>("tram-sac-exp", 0);
   const [levelUp, setLevelUp] = useState<Level | null>(null);
   const [gainKey, setGainKey] = useState(0); // đổi giá trị mỗi lần +EXP để kích hoạt animation
+  const [lastGain, setLastGain] = useState(EXP_PER_ACTION);
 
   const level = getLevel(exp);
   const progress =
@@ -48,7 +42,9 @@ export function useGamification() {
 
   const addExp = useCallback(
     (amount = EXP_PER_ACTION) => {
+      if (amount <= 0) return;
       setExp((prev) => prev + amount);
+      setLastGain(amount);
       setGainKey((k) => k + 1);
     },
     [setExp],
@@ -64,6 +60,7 @@ export function useGamification() {
     addExp,
     reset,
     gainKey,
+    lastGain,
     levelUp,
     dismissLevelUp: () => setLevelUp(null),
   };

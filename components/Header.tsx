@@ -2,12 +2,11 @@
 
 import { Moon, Sun } from "lucide-react";
 import type { useGamification } from "@/hooks/useGamification";
-import { EXP_PER_ACTION } from "@/hooks/useGamification";
 
 type Game = ReturnType<typeof useGamification>;
 
 export function Header({ game, theme, onToggleTheme }: { game: Game; theme: "light" | "dark"; onToggleTheme: () => void }) {
-  const { exp, level, nextLevel, progress, gainKey } = game;
+  const { exp, level, nextLevel, progress, gainKey, lastGain } = game;
 
   return (
     <header className="sticky top-0 z-30 border-b border-ink/5 bg-cream/80 backdrop-blur-md">
@@ -37,7 +36,7 @@ export function Header({ game, theme, onToggleTheme }: { game: Game; theme: "lig
                   className="pointer-events-none absolute -top-1 right-0 animate-exp-gain font-black text-amber-500"
                   aria-hidden
                 >
-                  +{EXP_PER_ACTION}
+                  +{lastGain}
                 </span>
               )}
             </span>
