@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { callGemini, countWords, hasApiKey, sleep, type Turn } from "@/lib/ai";
+import { getLessonQuestion } from "@/data/lessons";
 import { getCharacter } from "@/lib/characters";
-import { mockChat, mockOutline, mockRewrite, mockStory } from "@/lib/mocks";
+import { mockChat, mockLessonHint, mockOutline, mockRewrite, mockStory } from "@/lib/mocks";
 import {
+  LESSON_HINT_SYSTEM_PROMPT,
   OUTLINE_SYSTEM_PROMPT,
   REWRITE_SYSTEM_PROMPT,
   characterChatPrompt,
@@ -11,6 +13,7 @@ import {
 import {
   MAX_CHAT_CHARS,
   MAX_CHAT_TURNS,
+  MAX_DRAFT_CHARS,
   MAX_PARAGRAPH_WORDS,
   MAX_TOPIC_CHARS,
   type ChatMessage,
@@ -19,7 +22,7 @@ import {
 
 /**
  * Endpoint dùng chung: POST /api/ai
- * Body: { actionType: "outline" | "rewrite" | "character_story" | "character_chat", payload: {...} }
+ * Body: { actionType: "outline" | "rewrite" | "character_story" | "character_chat" | "lesson_hint", payload: {...} }
  */
 export async function POST(req: Request) {
   // proxy.ts đã chặn theo Content-Length; kiểm tra lại ở đây cho trường hợp body gửi dạng chunked.
@@ -102,6 +105,35 @@ export async function POST(req: Request) {
           temperature: 0.9,
         });
         return ok({ reply });
+      }
+
+      /* ---------------- Cô giáo AI gợi ý câu hỏi đọc hiểu ---------------- */
+      case "lesson_hint": {
+        const found = getLessonQuestion(
+          Number(payload.lessonId),
+          Number(payload.textIndex),
+          Number(payload.questionIndex),
+        );
+        if (!found) return bad("Không tìm thấy câu hỏi này!");
+        const draft = str(payload.draft).trim();
+        if (draft.length > MAX_DRAFT_CHARS) return bad(`Vở nháp dài quá, em rút gọn dưới ${MAX_DRAFT_CHARS} kí tự nhé!`);
+
+        if (demo) return ok({ hint: mockLessonHint(found.text.name, draft) }, 900);
+        const hint = await callGemini({
+          systemPrompt: LESSON_HINT_SYSTEM_PROMPT,
+          turns: [
+            {
+              role: "user",
+              text: [
+                `Bài học: ${found.lesson.title} (${found.lesson.theme})`,
+                `Văn bản: ${found.text.name}`,
+                `Câu hỏi: ${found.question}`,
+                draft ? `Vở nháp của em:\n"""\n${draft}\n"""` : "Vở nháp của em: (em chưa viết gì)",
+              ].join("\n"),
+            },
+          ],
+        });
+        return ok({ hint });
       }
 
       default:

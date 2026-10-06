@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CharacterExplorer } from "@/components/CharacterExplorer";
 import { Footer } from "@/components/Footer";
 import { GameCorner } from "@/components/games/GameCorner";
@@ -9,18 +9,30 @@ import { Hero } from "@/components/Hero";
 import { HistoryPanel } from "@/components/HistoryPanel";
 import { OutlineTool } from "@/components/OutlineTool";
 import { RewriteTool } from "@/components/RewriteTool";
+import { Roadmap } from "@/components/Roadmap";
+import { MobileNav, Sidebar, type NavItem } from "@/components/Sidebar";
 import { useGamification } from "@/hooks/useGamification";
 import { useHistory } from "@/hooks/useHistory";
 import { useTheme } from "@/hooks/useTheme";
+import { INVITE_PARAM, extractRoomCode, isRoomCode } from "@/lib/race-shared";
 import type { HistoryItem, RewriteResult } from "@/lib/types";
 
-type Tab = "outline" | "rewrite" | "characters" | "games";
+type Tab = "roadmap" | "outline" | "rewrite" | "characters" | "games";
 
-const TABS: { id: Tab; emoji: string; title: string; subtitle: string; active: string }[] = [
+const TABS: NavItem<Tab>[] = [
+  {
+    id: "roadmap",
+    emoji: "🗺️",
+    title: "Lộ trình",
+    short: "Lộ trình",
+    subtitle: "10 chặng SGK Văn 6",
+    active: "bg-peach-pastel ring-orange-300 dark:ring-orange-700",
+  },
   {
     id: "outline",
     emoji: "✨",
     title: "Máy tạo Dàn Ý",
+    short: "Dàn ý",
     subtitle: "Nhập đề – có ngay dàn ý",
     active: "bg-sky-pastel ring-sky-300 dark:ring-sky-700",
   },
@@ -28,6 +40,7 @@ const TABS: { id: Tab; emoji: string; title: string; subtitle: string; active: s
     id: "rewrite",
     emoji: "🧚‍♀️",
     title: "Trợ lý Gỡ Bí",
+    short: "Gỡ bí",
     subtitle: "Sửa lỗi, gợi ý viết hay",
     active: "bg-pink-pastel ring-pink-300 dark:ring-pink-700",
   },
@@ -35,6 +48,7 @@ const TABS: { id: Tab; emoji: string; title: string; subtitle: string; active: s
     id: "characters",
     emoji: "🎭",
     title: "Nhân vật",
+    short: "Nhân vật",
     subtitle: "Nghe chuyện & phỏng vấn",
     active: "bg-mint-pastel ring-emerald-300 dark:ring-emerald-700",
   },
@@ -42,13 +56,14 @@ const TABS: { id: Tab; emoji: string; title: string; subtitle: string; active: s
     id: "games",
     emoji: "🎮",
     title: "Góc Giải Trí",
+    short: "Giải trí",
     subtitle: "Mini-game nhận EXP",
     active: "bg-lemon-pastel ring-amber-300 dark:ring-amber-700",
   },
 ];
 
 /** Các tab không cần cột Lịch sử bên phải. */
-const FULL_WIDTH_TABS: Tab[] = ["characters", "games"];
+const FULL_WIDTH_TABS: Tab[] = ["roadmap", "characters", "games"];
 
 export default function Home() {
   const [tab, setTab] = useState<Tab>("outline");
@@ -61,6 +76,18 @@ export default function Home() {
   const [outline, setOutline] = useState<string | null>(null);
   const [paragraph, setParagraph] = useState("");
   const [rewrite, setRewrite] = useState<RewriteResult | null>(null);
+  const [raceInvite, setRaceInvite] = useState<string | null>(null);
+
+  // Mở bằng link mời / quét QR (?race=ABCDE) → vào thẳng Góc Giải Trí › Đua Tốc Độ Gõ, điền sẵn mã phòng.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const code = extractRoomCode(url.searchParams.get(INVITE_PARAM) ?? "");
+    if (!isRoomCode(code)) return;
+    setRaceInvite(code);
+    setTab("games");
+    url.searchParams.delete(INVITE_PARAM);
+    window.history.replaceState(null, "", url);
+  }, []);
 
   const openHistory = (item: HistoryItem) => {
     if (item.kind === "outline") {
@@ -83,82 +110,64 @@ export default function Home() {
       <Background />
       <Header game={game} theme={theme} onToggleTheme={toggle} />
 
-      <main className="mx-auto max-w-6xl space-y-8 px-4 pt-6 sm:px-6">
-        <Hero
-          streakText={
-            missions === 0
-              ? "Hoàn thành nhiệm vụ đầu tiên để nhận +10 EXP nhé! 🎁"
-              : `Em đã hoàn thành ${missions} nhiệm vụ – đang là ${game.level.emoji} ${game.level.name}. Tiếp tục nào!`
-          }
-        />
+      <div className="mx-auto flex max-w-7xl items-start gap-6 px-4 pt-6 sm:px-6">
+        <Sidebar items={TABS} active={tab} onChange={setTab} />
 
-        <nav id="workspace" className="grid scroll-mt-28 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4" role="tablist">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              role="tab"
-              aria-selected={tab === t.id}
-              onClick={() => setTab(t.id)}
-              className={`flex items-center gap-3 rounded-2xl p-4 text-left shadow-soft transition duration-300 ease-bounce hover:-translate-y-1.5 hover:shadow-pop active:scale-95 ${
-                tab === t.id ? `${t.active} -translate-y-1 ring-4` : "bg-surface/80"
-              }`}
-            >
-              <span
-                className={`text-4xl transition duration-300 ease-bounce ${tab === t.id ? "rotate-6 scale-110" : ""}`}
-                aria-hidden
-              >
-                {t.emoji}
-              </span>
-              <span>
-                <span className="block text-lg font-extrabold">{t.title}</span>
-                <span className="block text-sm font-semibold text-ink/60">{t.subtitle}</span>
-              </span>
-            </button>
-          ))}
-        </nav>
+        <main className="min-w-0 flex-1 space-y-8">
+          <Hero
+            streakText={
+              missions === 0
+                ? "Hoàn thành nhiệm vụ đầu tiên để nhận +10 EXP nhé! 🎁"
+                : `Em đã hoàn thành ${missions} nhiệm vụ – đang là ${game.level.emoji} ${game.level.name}. Tiếp tục nào!`
+            }
+          />
 
-        <div className={`grid gap-6 ${fullWidth ? "" : "lg:grid-cols-[1fr_300px]"}`}>
-          <section role="tabpanel">
-            {tab === "outline" && (
-              <OutlineTool
-                topic={topic}
-                setTopic={setTopic}
-                outline={outline}
-                setOutline={setOutline}
-                onSuccess={(input, result) => {
-                  history.add({ kind: "outline", input, result });
-                  game.addExp();
-                }}
+          {/* Cột Lịch sử chỉ đứng cạnh nội dung khi đủ rộng (xl), nhỏ hơn thì xuống dưới. */}
+          <div id="workspace" className={`grid scroll-mt-28 gap-6 ${fullWidth ? "" : "xl:grid-cols-[1fr_300px]"}`}>
+            <section role="tabpanel" className="min-w-0">
+              {tab === "roadmap" && <Roadmap onReward={game.addExp} />}
+              {tab === "outline" && (
+                <OutlineTool
+                  topic={topic}
+                  setTopic={setTopic}
+                  outline={outline}
+                  setOutline={setOutline}
+                  onSuccess={(input, result) => {
+                    history.add({ kind: "outline", input, result });
+                    game.addExp();
+                  }}
+                />
+              )}
+              {tab === "rewrite" && (
+                <RewriteTool
+                  paragraph={paragraph}
+                  setParagraph={setParagraph}
+                  result={rewrite}
+                  setResult={setRewrite}
+                  onSuccess={(input, result) => {
+                    history.add({ kind: "rewrite", input, result });
+                    game.addExp();
+                  }}
+                />
+              )}
+              {tab === "characters" && <CharacterExplorer onSuccess={() => game.addExp()} />}
+              {tab === "games" && <GameCorner key={raceInvite} onReward={game.addExp} raceInvite={raceInvite} />}
+            </section>
+
+            {!fullWidth && (
+              <HistoryPanel
+                items={history.items}
+                onOpen={openHistory}
+                onRemove={history.remove}
+                onClear={history.clear}
               />
             )}
-            {tab === "rewrite" && (
-              <RewriteTool
-                paragraph={paragraph}
-                setParagraph={setParagraph}
-                result={rewrite}
-                setResult={setRewrite}
-                onSuccess={(input, result) => {
-                  history.add({ kind: "rewrite", input, result });
-                  game.addExp();
-                }}
-              />
-            )}
-            {tab === "characters" && <CharacterExplorer onSuccess={() => game.addExp()} />}
-            {tab === "games" && <GameCorner onReward={game.addExp} />}
-          </section>
-
-          {!fullWidth && (
-            <HistoryPanel
-              items={history.items}
-              onOpen={openHistory}
-              onRemove={history.remove}
-              onClear={history.clear}
-            />
-          )}
-        </div>
-      </main>
+          </div>
+        </main>
+      </div>
 
       <Footer />
+      <MobileNav items={TABS} active={tab} onChange={setTab} />
 
       {game.levelUp && <LevelUpToast level={game.levelUp} onClose={game.dismissLevelUp} />}
     </>
@@ -173,7 +182,7 @@ function LevelUpToast({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-x-4 bottom-6 z-[60] mx-auto max-w-sm animate-pop-in" role="alert">
+    <div className="fixed inset-x-4 bottom-24 z-[60] lg:bottom-6 mx-auto max-w-sm animate-pop-in" role="alert">
       <div className="flex items-center gap-4 rounded-2xl border-4 border-amber-200 bg-surface p-4 shadow-pop">
         <span className="animate-bounce text-5xl" aria-hidden>
           {level.emoji}

@@ -3,10 +3,11 @@
 import { useState } from "react";
 import { Card } from "../ui";
 import { AuthorQuiz } from "./AuthorQuiz";
+import { MultiplayerRace } from "./MultiplayerRace";
 import { SpellingHunt } from "./SpellingHunt";
 import { TypingRace } from "./TypingRace";
 
-type GameId = "spelling" | "typing" | "quiz";
+type GameId = "spelling" | "typing" | "race" | "quiz";
 
 const GAMES: { id: GameId; emoji: string; title: string; desc: string; reward: string; active: string }[] = [
   {
@@ -26,6 +27,14 @@ const GAMES: { id: GameId; emoji: string; title: string; desc: string; reward: s
     active: "bg-pink-pastel ring-pink-300 dark:ring-pink-700",
   },
   {
+    id: "race",
+    emoji: "🏁",
+    title: "Đua Tốc Độ Gõ",
+    desc: "Tạo phòng, đua gõ cùng bạn bè",
+    reward: "+10 EXP, về nhất +20",
+    active: "bg-peach-pastel ring-orange-300 dark:ring-orange-700",
+  },
+  {
     id: "quiz",
     emoji: "🧠",
     title: "Tác giả – Tác phẩm",
@@ -36,8 +45,15 @@ const GAMES: { id: GameId; emoji: string; title: string; desc: string; reward: s
 ];
 
 /** Góc Giải Trí – mini-game chạy hoàn toàn ở client, thưởng EXP qua `onReward` (game.addExp). */
-export function GameCorner({ onReward }: { onReward: (exp: number) => void }) {
-  const [game, setGame] = useState<GameId>("spelling");
+export function GameCorner({
+  onReward,
+  raceInvite = null,
+}: {
+  onReward: (exp: number) => void;
+  /** Mã phòng lấy từ link mời / mã QR. */
+  raceInvite?: string | null;
+}) {
+  const [game, setGame] = useState<GameId>(raceInvite ? "race" : "spelling");
 
   return (
     <div className="space-y-6">
@@ -45,7 +61,7 @@ export function GameCorner({ onReward }: { onReward: (exp: number) => void }) {
         <h2 className="text-xl font-extrabold">🎮 Góc Giải Trí</h2>
         <p className="text-sm font-semibold text-ink/60">Vừa chơi vừa học – chơi xong là có EXP để lên cấp nhé!</p>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {GAMES.map((g) => (
             <button
               key={g.id}
@@ -71,6 +87,7 @@ export function GameCorner({ onReward }: { onReward: (exp: number) => void }) {
 
       {game === "spelling" && <SpellingHunt onReward={onReward} />}
       {game === "typing" && <TypingRace onReward={onReward} />}
+      {game === "race" && <MultiplayerRace onReward={onReward} invite={raceInvite} />}
       {game === "quiz" && <AuthorQuiz onReward={onReward} />}
     </div>
   );

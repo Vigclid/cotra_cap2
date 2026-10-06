@@ -1,11 +1,18 @@
 import type { Metadata } from "next";
-import { Nunito } from "next/font/google";
+import { Noto_Serif, Nunito } from "next/font/google";
 import "./globals.css";
 
 const nunito = Nunito({
   subsets: ["latin", "vietnamese"],
   weight: ["400", "600", "700", "800", "900"],
   variable: "--font-nunito",
+});
+
+const notoSerif = Noto_Serif({
+  subsets: ["latin", "vietnamese"],
+  weight: ["400", "700"],
+  style: ["normal", "italic"],
+  variable: "--font-noto-serif",
 });
 
 export const metadata: Metadata = {
@@ -18,7 +25,7 @@ const themeScript = `(function(){try{var t=localStorage.getItem("tram-sac-theme"
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="vi" className={nunito.variable} suppressHydrationWarning>
+    <html lang="vi" className={`${nunito.variable} ${notoSerif.variable}`} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>

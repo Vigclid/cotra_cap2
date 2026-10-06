@@ -126,6 +126,19 @@ export const AI_RULES_GLOBAL: Rule[] = [
   },
 ];
 
+/**
+ * Giới hạn cho API "Đua Tốc Độ Gõ" (/api/pusher). Mỗi tay đua gửi ~1 request mỗi từ gõ xong,
+ * và cả lớp học thường dùng chung 1 IP (NAT) → cần nới rộng hơn mức mặc định.
+ */
+export const RACE_API_RULES: Rule[] = [
+  {
+    name: "race",
+    limit: envInt("RATE_LIMIT_RACE_PER_MINUTE", 900),
+    windowMs: MINUTE,
+    message: "Đường đua đang quá tải, em đợi vài giây rồi gõ tiếp nhé 🚦",
+  },
+];
+
 /** Giới hạn mặc định cho các API khác. */
 export const DEFAULT_API_RULES: Rule[] = [
   {

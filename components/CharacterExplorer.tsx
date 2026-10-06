@@ -4,16 +4,17 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { BookHeart, MessageCircle, RefreshCw, Send, X } from "lucide-react";
 import { CHARACTERS, type Character } from "@/lib/characters";
 import { callAI, errorMessage } from "@/lib/api-client";
+import { getStage } from "@/lib/roadmap";
 import { MAX_CHAT_CHARS, type ChatMessage } from "@/lib/types";
 import { Mascot, MascotLoading } from "./Mascot";
 import { BouncyButton, Card, DemoBadge, ErrorBox, Markdown } from "./ui";
 
-const GRADES = ["Tất cả", "Lớp 6", "Lớp 8", "Lớp 9"];
+const LESSONS = [...new Set(CHARACTERS.map((c) => c.lesson))].sort((a, b) => a - b);
 
 export function CharacterExplorer({ onSuccess }: { onSuccess: () => void }) {
-  const [grade, setGrade] = useState("Tất cả");
+  const [lesson, setLesson] = useState<number | null>(null);
   const [selected, setSelected] = useState<Character | null>(null);
-  const list = grade === "Tất cả" ? CHARACTERS : CHARACTERS.filter((c) => c.grade === grade);
+  const list = lesson === null ? CHARACTERS : CHARACTERS.filter((c) => c.lesson === lesson);
 
   return (
     <div className="space-y-6">
@@ -25,15 +26,16 @@ export function CharacterExplorer({ onSuccess }: { onSuccess: () => void }) {
           </p>
         </div>
         <div className="flex flex-wrap gap-1.5">
-          {GRADES.map((g) => (
+          {[null, ...LESSONS].map((l) => (
             <button
-              key={g}
-              onClick={() => setGrade(g)}
+              key={l ?? "all"}
+              onClick={() => setLesson(l)}
+              title={l === null ? undefined : getStage(l)?.name}
               className={`rounded-full px-3 py-1.5 text-sm font-bold transition duration-300 ease-bounce hover:-translate-y-0.5 ${
-                grade === g ? "bg-violet-300 text-violet-950" : "bg-cream text-ink/70"
+                lesson === l ? "bg-violet-300 text-violet-950" : "bg-cream text-ink/70"
               }`}
             >
-              {g}
+              {l === null ? "Tất cả" : `Bài ${l}`}
             </button>
           ))}
         </div>
@@ -53,7 +55,7 @@ export function CharacterExplorer({ onSuccess }: { onSuccess: () => void }) {
                 {c.emoji}
               </span>
               <span className="absolute left-2 top-2 rounded-full bg-white/80 px-2 py-0.5 text-[11px] font-extrabold text-slate-700">
-                {c.grade}
+                Bài {c.lesson}
               </span>
             </div>
             <div className="p-3.5">
@@ -123,7 +125,7 @@ function CharacterModal({
               {c.name}
             </h2>
             <p className="truncate text-sm font-bold opacity-75">
-              {c.work} · {c.author} · {c.grade}
+              {c.work} · {c.author} · Bài {c.lesson}: {getStage(c.lesson)?.name}
             </p>
           </div>
           <button
@@ -284,7 +286,11 @@ function ChatPanel({ character: c, onSuccess }: { character: Character; onSucces
             <Mascot
               emoji={c.emoji}
               size="sm"
-              message={`Chào cháu! Ta là ${c.name}. Cháu muốn hỏi ta điều gì nào?`}
+              message={
+                c.name.includes("&")
+                  ? `Chào cậu! Chúng tớ là ${c.name}. Cậu muốn hỏi chúng tớ điều gì nào?`
+                  : `Chào cháu! Ta là ${c.name}. Cháu muốn hỏi ta điều gì nào?`
+              }
             />
             <div className="flex flex-wrap gap-2">
               {c.sampleQuestions.map((q) => (

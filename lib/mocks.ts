@@ -106,6 +106,25 @@ Cơn gió dường như hiểu chuyện, nhẹ nhàng lật từng trang sách c
 💭 **Điều em có thể học được:** ${c.tagline.toLowerCase()} – mỗi nhân vật đều có một trái tim đáng trân trọng.`;
 }
 
+export function mockLessonHint(textName: string, draft: string) {
+  return `*(Chế độ DEMO – thêm GEMINI_API_KEY để cô gợi ý thật nhé)*
+
+**🔍 Đọc lại ở đâu:** Em mở lại văn bản *${textName}*, gạch chân những chi tiết, lời thoại liên quan trực tiếp đến câu hỏi.
+
+**💡 Gợi ý từng bước:**
+- Câu hỏi đang hỏi về **ai** hoặc **cái gì**?
+- Trong văn bản, chi tiết nào nói đến điều đó?
+- Chi tiết ấy cho em thấy điều gì về nhân vật / nội dung bài?
+
+**📝 Về vở nháp của em:** ${
+    draft.trim()
+      ? "Em đã bắt đầu viết rồi, giỏi lắm! Thử thêm một dẫn chứng trong văn bản để câu trả lời chắc chắn hơn nhé."
+      : "Em thử viết 1–2 câu theo ý hiểu của mình trước, cô sẽ góp ý tiếp nhé!"
+  }
+
+**🌱** Đọc kĩ một lần là hiểu sâu cả bài – cố lên em!`;
+}
+
 export function mockChat(c: Character, question: string) {
   return `*mỉm cười* Ta là ${c.name} đây. Cháu hỏi "${question.slice(0, 60)}" à? Hay lắm! Nhưng hiện ta đang ở chế độ demo nên chưa trả lời kĩ được. Cháu nhờ thầy cô thêm GEMINI_API_KEY vào .env.local rồi ta kể cho nghe nhé!`;
 }

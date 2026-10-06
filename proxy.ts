@@ -3,6 +3,7 @@ import {
   AI_RULES_GLOBAL,
   AI_RULES_PER_IP,
   DEFAULT_API_RULES,
+  RACE_API_RULES,
   consume,
   getClientIp,
   type Check,
@@ -25,14 +26,16 @@ export function proxy(req: NextRequest) {
   }
 
   const ip = getClientIp(req.headers);
-  const isAI = req.nextUrl.pathname === "/api/ai" || req.nextUrl.pathname.startsWith("/api/ai/");
+  const { pathname } = req.nextUrl;
+  const isAI = pathname === "/api/ai" || pathname.startsWith("/api/ai/");
+  const isRace = pathname === "/api/pusher";
 
   const checks: Check[] = isAI
     ? [
         ...AI_RULES_PER_IP.map((rule) => ({ id: ip, rule })),
         ...AI_RULES_GLOBAL.map((rule) => ({ id: "global", rule })),
       ]
-    : DEFAULT_API_RULES.map((rule) => ({ id: ip, rule }));
+    : (isRace ? RACE_API_RULES : DEFAULT_API_RULES).map((rule) => ({ id: ip, rule }));
 
   const result = consume(checks);
   const resetSec = Math.ceil(result.resetMs / 1000);

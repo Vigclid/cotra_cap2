@@ -10,7 +10,7 @@ export function Header({ game, theme, onToggleTheme }: { game: Game; theme: "lig
 
   return (
     <header className="sticky top-0 z-30 border-b border-ink/5 bg-cream/80 backdrop-blur-md">
-      <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-3 px-4 py-3 sm:px-6">
+      <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-4 gap-y-3 px-4 py-3 sm:px-6">
         {/* Logo */}
         <a href="#" className="group flex items-center gap-2.5">
           <span className="grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-pink-300 to-sky-300 text-2xl shadow-soft transition duration-300 ease-bounce group-hover:-rotate-12 group-hover:scale-110">

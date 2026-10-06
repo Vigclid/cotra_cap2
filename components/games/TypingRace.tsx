@@ -1,26 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { RotateCcw, Shuffle, Timer, Target, Zap } from "lucide-react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { ArrowRight, Keyboard, Lightbulb, RotateCcw, Shuffle, Timer, Target, Zap } from "lucide-react";
 import { popConfetti } from "@/lib/confetti";
 import { TYPING_PASSAGES } from "@/lib/games-data";
+import { getWordHint, type WordHint } from "@/lib/telex";
+import { canon } from "@/lib/vietnamese";
 import { BouncyButton, Card } from "../ui";
-
-/**
- * Chuẩn hóa tiếng Việt để so sánh công bằng:
- * - NFC: gộp dấu tổ hợp (bộ gõ trên macOS/iOS có thể sinh dạng NFD).
- * - Thống nhất vị trí dấu thanh kiểu mới: "òa"→"oà", "óe"→"oé", "ủy"→"uỷ"
- *   (học sinh gõ "thủy" hay "thuỷ" đều được tính đúng).
- */
-const TONES = "̣̀́̃̉";
-function canon(s: string) {
-  return s
-    .replace(/\s/g, " ")
-    .normalize("NFD")
-    .replace(new RegExp(`([oO])([${TONES}])([aAeE])`, "g"), "$1$3$2")
-    .replace(new RegExp(`([uU])([${TONES}])([yY])`, "g"), "$1$3$2")
-    .normalize("NFC");
-}
+import { keyIdFromCode, VirtualKeyboard } from "./VirtualKeyboard";
 
 function getStats(typed: string, target: string, elapsedMs: number, done: boolean) {
   let correctChars = 0;
@@ -53,6 +40,8 @@ export function TypingRace({ onReward }: { onReward: (exp: number) => void }) {
   const [startAt, setStartAt] = useState<number | null>(null);
   const [now, setNow] = useState(0);
   const [result, setResult] = useState<Result | null>(null);
+  const [showKeyboard, setShowKeyboard] = useState(true);
+  const [pressed, setPressed] = useState<ReadonlySet<string>>(new Set());
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const passage = TYPING_PASSAGES[passageIdx];
@@ -60,6 +49,19 @@ export function TypingRace({ onReward }: { onReward: (exp: number) => void }) {
   const typed = canon(input).slice(0, target.length);
   const elapsed = startAt ? Math.max(0, (now || startAt) - startAt) : 0;
   const live = getStats(typed, target, elapsed, false);
+  const hint = result ? null : getWordHint(target, typed);
+
+  const togglePressed = (e: KeyboardEvent, down: boolean) => {
+    const id = keyIdFromCode(e.code);
+    if (!id) return;
+    setPressed((prev) => {
+      if (prev.has(id) === down) return prev;
+      const next = new Set(prev);
+      if (down) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
 
   // Đồng hồ chạy trong lúc đang gõ.
   useEffect(() => {
@@ -132,7 +134,10 @@ export function TypingRace({ onReward }: { onReward: (exp: number) => void }) {
         <p className="mb-2 text-xs font-extrabold uppercase tracking-widest text-ink/40">📖 {passage.source}</p>
         <p className="select-none text-lg leading-relaxed sm:text-xl" aria-label={passage.text}>
           {[...target].map((ch, i) => {
-            let cls = "text-ink/40";
+            let cls =
+              hint && i >= hint.start && i < hint.end
+                ? "text-ink/70 underline decoration-sky-400 decoration-[3px] underline-offset-[6px]"
+                : "text-ink/40";
             if (i < typed.length) {
               cls =
                 typed[i] === ch
@@ -150,13 +155,20 @@ export function TypingRace({ onReward }: { onReward: (exp: number) => void }) {
         </p>
       </div>
 
+      {hint && <TelexHint hint={hint} />}
+
       <textarea
         ref={inputRef}
         value={input}
         onChange={(e) => onChange(e.target.value)}
         onPaste={(e) => e.preventDefault()}
         onDrop={(e) => e.preventDefault()}
-        onKeyDown={(e) => e.key === "Enter" && e.preventDefault()}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.preventDefault();
+          togglePressed(e, true);
+        }}
+        onKeyUp={(e) => togglePressed(e, false)}
+        onBlur={() => setPressed(new Set())}
         disabled={!!result}
         rows={3}
         spellCheck={false}
@@ -167,17 +179,33 @@ export function TypingRace({ onReward }: { onReward: (exp: number) => void }) {
         className="w-full resize-none rounded-2xl border-4 border-sky-pastel bg-surface p-4 text-lg font-semibold outline-none transition focus:border-sky-300 disabled:opacity-60 dark:focus:border-sky-700"
       />
 
+      {showKeyboard && (
+        <div className="hidden sm:block">
+          <VirtualKeyboard next={hint?.next ?? null} pressed={pressed} />
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-3 text-sm font-semibold text-ink/60">
         <span>
           🎁 Thưởng: 10 EXP · ≥25 từ/phút +5 · ≥40 từ/phút +10 (cần chính xác từ 70%)
         </span>
-        <button
-          type="button"
-          onClick={() => reset()}
-          className="inline-flex items-center gap-1 rounded-full bg-cream px-3 py-1.5 font-bold transition duration-300 ease-bounce hover:-translate-y-0.5"
-        >
-          <RotateCcw className="h-4 w-4" /> Gõ lại
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setShowKeyboard((v) => !v)}
+            aria-pressed={showKeyboard}
+            className="hidden items-center gap-1 rounded-full bg-cream px-3 py-1.5 font-bold transition duration-300 ease-bounce hover:-translate-y-0.5 sm:inline-flex"
+          >
+            <Keyboard className="h-4 w-4" /> {showKeyboard ? "Ẩn bàn phím" : "Hiện bàn phím"}
+          </button>
+          <button
+            type="button"
+            onClick={() => reset()}
+            className="inline-flex items-center gap-1 rounded-full bg-cream px-3 py-1.5 font-bold transition duration-300 ease-bounce hover:-translate-y-0.5"
+          >
+            <RotateCcw className="h-4 w-4" /> Gõ lại
+          </button>
+        </div>
       </div>
 
       {result && (
@@ -188,6 +216,74 @@ export function TypingRace({ onReward }: { onReward: (exp: number) => void }) {
         />
       )}
     </Card>
+  );
+}
+
+/** Gợi ý gõ Telex cho từ hiện tại: "Có" → C o s, "đau" → d d a u. */
+function TelexHint({ hint }: { hint: WordHint }) {
+  const nextIndex = hint.offTrack ? -1 : hint.steps.findIndex((s) => !s.done);
+
+  return (
+    <div
+      aria-live="polite"
+      className={`rounded-2xl border-2 border-dashed p-4 transition-colors ${
+        hint.offTrack ? "border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950/30" : "border-sky-200 bg-sky-pastel/40 dark:border-sky-800"
+      }`}
+    >
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span className="flex items-center gap-1 text-xs font-black uppercase tracking-widest text-ink/50">
+          <Lightbulb className="h-4 w-4 text-amber-500" /> Từ đang gõ
+        </span>
+        <span className="rounded-xl bg-surface px-3 py-1 text-2xl font-black shadow-soft">{hint.word}</span>
+        <ArrowRight className="h-5 w-5 text-ink/30" aria-hidden />
+        <span className="text-xs font-black uppercase tracking-widest text-ink/50">Gõ phím</span>
+        <span className="flex flex-wrap items-end gap-1" aria-label={`Gõ ${hint.steps.map((s) => s.key).join("")}`}>
+          {hint.steps.map((step, i) => (
+            <span key={i} className="flex flex-col items-center">
+              <kbd
+                className={`grid h-9 min-w-9 place-items-center rounded-lg px-2 font-sans text-lg font-black transition duration-200 ease-bounce ${
+                  step.done
+                    ? "bg-emerald-200 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200"
+                    : i === nextIndex
+                      ? "scale-110 bg-pink-400 text-white shadow-[0_3px_0_#db2777]"
+                      : step.tone
+                        ? "bg-amber-100 text-amber-800 shadow-[0_3px_0_#fcd34d] dark:bg-amber-900/50 dark:text-amber-200"
+                        : "bg-surface text-ink shadow-[0_3px_0_rgb(0_0_0/0.12)]"
+                }`}
+              >
+                {step.key}
+              </kbd>
+              {step.tone && <span className="mt-1 text-[10px] font-extrabold text-amber-600 dark:text-amber-300">{step.tone}</span>}
+            </span>
+          ))}
+        </span>
+        {hint.next === " " && (
+          <span className="flex items-center gap-1.5 text-sm font-bold text-ink/60">
+            rồi bấm
+            <kbd className="animate-pulse rounded-lg bg-pink-400 px-3 py-1.5 font-sans text-xs font-black text-white shadow-[0_3px_0_#db2777]">
+              Phím cách
+            </kbd>
+          </span>
+        )}
+      </div>
+
+      {hint.rules.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {hint.rules.map((rule) => (
+            <span key={rule.keys} className="rounded-full bg-surface px-2.5 py-1 text-xs font-bold text-ink/70 shadow-soft">
+              <span className="font-black text-sky-600 dark:text-sky-300">{rule.keys}</span> → {rule.result}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {hint.offTrack && (
+        <p className="mt-3 text-sm font-bold text-red-600 dark:text-red-300">
+          Ôi, từ này đang gõ chưa đúng! Bấm <kbd className="rounded bg-surface px-1.5 font-sans">⌫ Xoá</kbd> để sửa nhé.
+          Nếu chữ không lên dấu, em nhờ người lớn bật bộ gõ tiếng Việt kiểu <b>Telex</b> (Unikey, EVKey...) nha.
+        </p>
+      )}
+    </div>
   );
 }
 
