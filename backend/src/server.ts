@@ -2,14 +2,20 @@ import cors from "cors";
 import express from "express";
 import helmet from "helmet";
 import { connectDB, disconnectDB } from "./config/db";
-import { env } from "./config/env";
+import { env, isAllowedOrigin } from "./config/env";
 import { errorHandler, notFound } from "./middlewares/errorHandler";
 import apiRoutes from "./routes";
 
 const app = express();
 
-app.use(helmet());
-app.use(cors({ origin: env.corsOrigin }));
+app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
+app.use(
+  cors({
+    origin(origin, callback) {
+      callback(null, isAllowedOrigin(origin));
+    },
+  }),
+);
 app.use(express.json({ limit: "1mb" }));
 
 app.use("/api", apiRoutes);
