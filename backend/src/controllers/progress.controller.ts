@@ -1,11 +1,29 @@
 import type { RequestHandler } from "express";
 import { getAuthUser } from "../middlewares/auth";
 import { Lesson } from "../models/Lesson";
-import { MAX_DRAFT_LENGTH, StudentProgress } from "../models/StudentProgress";
+import { MAX_DRAFT_LENGTH, StudentProgress, type IDraft } from "../models/StudentProgress";
 import { User } from "../models/User";
 import { HttpError } from "../utils/HttpError";
 import { LEVELS, getLevel } from "../utils/levels";
 import { toInt, toLessonId } from "../utils/validate";
+
+/** Bản nháp cũ chỉ có `draftContent`; bản mới ghi cả `content`. */
+export function draftText(draft: { content?: string; draftContent?: string }): string {
+  if (typeof draft.content === "string" && draft.content.length > 0) return draft.content;
+  return typeof draft.draftContent === "string" ? draft.draftContent : "";
+}
+
+function presentDraft(draft: IDraft) {
+  const content = draftText(draft);
+  return {
+    lessonId: draft.lessonId,
+    textIndex: draft.textIndex ?? 0,
+    questionIndex: draft.questionIndex,
+    content,
+    draftContent: content,
+    updatedAt: draft.updatedAt,
+  };
+}
 
 const DEFAULT_EXP = 10;
 /** Trần EXP cho một request – EXP do client gửi lên nên không thể tin tuyệt đối. */
@@ -29,12 +47,26 @@ export const getDrafts: RequestHandler = async (req, res) => {
   const { id } = getAuthUser(req);
   const lessonId = toLessonId(req.params.lessonId);
   const progress = await StudentProgress.findOne({ studentId: id }).select("drafts").lean();
-  res.json({ lessonId, drafts: (progress?.drafts ?? []).filter((d) => d.lessonId === lessonId) });
+  res.json({
+    lessonId,
+    drafts: (progress?.drafts ?? []).filter((d) => d.lessonId === lessonId).map(presentDraft),
+  });
+};
+
+/** GET /api/progress/drafts – toàn bộ vở nháp của học sinh đang đăng nhập, mới nhất trước. */
+export const getAllDrafts: RequestHandler = async (req, res) => {
+  const { id } = getAuthUser(req);
+  const progress = await StudentProgress.findOne({ studentId: id }).select("drafts").lean();
+  const drafts = [...(progress?.drafts ?? [])]
+    .sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt))
+    .map(presentDraft);
+  res.json({ drafts });
 };
 
 /**
- * POST /api/progress/draft – lưu vở nháp.
- * body: { lessonId, textIndex = 0, questionIndex, draftContent }
+ * POST /api/progress/draft – lưu vở nháp (client đã debounce).
+ * body: { lessonId, questionIndex, content, textIndex = 0 }
+ * `draftContent` vẫn được nhận để tương thích với vở học sinh hiện tại.
  * Nếu đã có nháp cho đúng câu hỏi đó thì ghi đè, chưa có thì thêm mới.
  */
 export const saveDraft: RequestHandler = async (req, res) => {
@@ -42,12 +74,13 @@ export const saveDraft: RequestHandler = async (req, res) => {
   const lessonId = toLessonId(req.body?.lessonId);
   const textIndex = toInt(req.body?.textIndex ?? 0, "textIndex");
   const questionIndex = toInt(req.body?.questionIndex, "questionIndex");
-  const draftContent = req.body?.draftContent;
+  const rawContent = req.body?.content !== undefined ? req.body.content : req.body?.draftContent;
 
-  if (typeof draftContent !== "string") throw new HttpError(400, "draftContent phải là chuỗi");
-  if (draftContent.length > MAX_DRAFT_LENGTH) {
+  if (typeof rawContent !== "string") throw new HttpError(400, "Nội dung nháp phải là chuỗi");
+  if (rawContent.length > MAX_DRAFT_LENGTH) {
     throw new HttpError(400, `Bài nháp tối đa ${MAX_DRAFT_LENGTH} ký tự`);
   }
+  const draftContent = rawContent;
 
   // Chỉ cho lưu nháp vào câu hỏi thực sự tồn tại.
   const lesson = await Lesson.findOne({ lessonId }).select("texts.questions").lean();
@@ -61,19 +94,25 @@ export const saveDraft: RequestHandler = async (req, res) => {
   // Bước 1: cập nhật nháp đã có (toán tử vị trí `$` trỏ vào phần tử khớp $elemMatch).
   const updated = await StudentProgress.updateOne(
     { studentId: id, drafts: { $elemMatch: match } },
-    { $set: { "drafts.$.draftContent": draftContent, "drafts.$.updatedAt": updatedAt } },
+    {
+      $set: {
+        "drafts.$.content": draftContent,
+        "drafts.$.draftContent": draftContent,
+        "drafts.$.updatedAt": updatedAt,
+      },
+    },
   );
 
   // Bước 2: chưa có → push nháp mới (upsert tạo luôn document tiến độ nếu học sinh chưa có).
   if (updated.matchedCount === 0) {
     await StudentProgress.updateOne(
       { studentId: id },
-      { $push: { drafts: { ...match, draftContent, updatedAt } } },
+      { $push: { drafts: { ...match, content: draftContent, draftContent, updatedAt } } },
       { upsert: true, runValidators: true },
     );
   }
 
-  res.json({ message: "Đã lưu bài nháp", draft: { ...match, draftContent, updatedAt } });
+  res.json({ message: "Đã lưu bài nháp", draft: { ...match, content: draftContent, draftContent, updatedAt } });
 };
 
 /**

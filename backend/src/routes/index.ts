@@ -4,6 +4,7 @@ import authRoutes from "./auth.routes";
 import gameRoutes from "./game.routes";
 import lessonRoutes from "./lesson.routes";
 import progressRoutes from "./progress.routes";
+import teacherRoutes from "./teacher.routes";
 
 const router = Router();
 
@@ -15,6 +16,7 @@ router.use("/auth", authRoutes);
 router.use("/games", gameRoutes);
 router.use("/lessons", lessonRoutes);
 router.use("/progress", progressRoutes);
+router.use("/teacher", teacherRoutes);
 router.use("/admin", adminRoutes);
 
 export default router;

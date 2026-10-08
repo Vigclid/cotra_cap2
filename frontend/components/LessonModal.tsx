@@ -113,7 +113,7 @@ export function LessonModal({
   }, []);
   const saveDraft = useCallback<SaveDraftFn>(
     async (target, value) => {
-      if (!preview) await api.progress.saveDraft({ ...target, draftContent: value });
+      if (!preview) await api.progress.saveDraft({ ...target, draftContent: value, content: value });
       rememberDraft(questionKey(target.lessonId, target.textIndex, target.questionIndex), value);
     },
     [preview, rememberDraft],

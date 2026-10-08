@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { LayoutDashboard, LogOut, Moon, Sun } from "lucide-react";
+import { BarChart3, LayoutDashboard, LogOut, Moon, Sun } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import type { useGamification } from "@/hooks/useGamification";
 import type { Role } from "@/types/api";
@@ -75,13 +75,22 @@ export function Header({ game, theme, onToggleTheme }: { game: Game; theme: "lig
               {user.fullName}
             </span>
             {(user.role === "teacher" || user.role === "admin") && (
-              <Link
-                href="/teacher/dashboard"
-                className="inline-flex items-center gap-1.5 rounded-full bg-violet-200 px-3 py-2 text-sm font-extrabold text-violet-900 transition duration-300 ease-bounce hover:-translate-y-0.5"
-              >
-                <LayoutDashboard className="h-4 w-4" />
-                <span className="hidden sm:inline">Quản lý game</span>
-              </Link>
+              <>
+                <Link
+                  href="/teacher/analytics"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-sky-200 px-3 py-2 text-sm font-extrabold text-sky-950 transition duration-300 ease-bounce hover:-translate-y-0.5"
+                >
+                  <BarChart3 className="h-4 w-4" />
+                  <span className="hidden sm:inline">Phân tích lớp</span>
+                </Link>
+                <Link
+                  href="/teacher/dashboard"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-violet-200 px-3 py-2 text-sm font-extrabold text-violet-900 transition duration-300 ease-bounce hover:-translate-y-0.5"
+                >
+                  <LayoutDashboard className="h-4 w-4" />
+                  <span className="hidden sm:inline">Quản lý game</span>
+                </Link>
+              </>
             )}
             <button
               onClick={logout}

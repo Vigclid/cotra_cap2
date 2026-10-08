@@ -18,6 +18,11 @@ export const env = {
     .filter(Boolean),
   /** Mã bí mật giáo viên nhập khi đăng ký role teacher. Không đưa mã này lên frontend. */
   teacherSecretCode: required("TEACHER_SECRET_CODE"),
+  /** Không bắt buộc: thiếu cả hai key thì API đánh giá năng lực trả bản nhận xét sơ bộ. */
+  geminiApiKey: process.env.GEMINI_API_KEY ?? "",
+  geminiModel: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+  openaiApiKey: process.env.OPENAI_API_KEY ?? "",
+  openaiModel: process.env.OPENAI_MODEL || "gpt-4o-mini",
 };
 
 /** Site production và các bản preview Vercel của cùng project. */

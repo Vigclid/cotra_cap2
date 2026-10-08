@@ -1,5 +1,8 @@
 import type { QuizQuestion, SpellingRound, TypingPassage } from "@/lib/games-data";
 import type {
+  AiEvaluationReport,
+  AnalyticsOverview,
+  AnalyticsStudent,
   Draft,
   DraftInput,
   ExpResult,
@@ -255,13 +258,11 @@ export const api = {
   progress: {
     async drafts(lessonId: number, signal?: AbortSignal): Promise<Draft[]> {
       const data = await apiFetch<{ drafts?: unknown }>(`/api/progress/draft/${lessonId}`, { signal });
-      return asList(data?.drafts).map((d) => ({
-        lessonId: num(d?.lessonId),
-        textIndex: num(d?.textIndex),
-        questionIndex: num(d?.questionIndex),
-        draftContent: str(d?.draftContent),
-        updatedAt: str(d?.updatedAt),
-      }));
+      return asList(data?.drafts).map(normalizeDraft);
+    },
+    async allDrafts(signal?: AbortSignal): Promise<Draft[]> {
+      const data = await apiFetch<{ drafts?: unknown }>("/api/progress/drafts", { signal });
+      return asList(data?.drafts).map(normalizeDraft);
     },
     saveDraft: (draft: DraftInput) => apiFetch<{ message: string }>("/api/progress/draft", { method: "POST", body: draft }),
     addExp: (body: { amount: number; lessonId?: number }) =>
@@ -292,4 +293,84 @@ export const api = {
     typing: gameResource("/api/admin/games/typing", normalizeTypingItem),
     quiz: gameResource("/api/admin/games/quiz", normalizeQuizItem),
   },
+
+  teacher: {
+    async analytics(signal?: AbortSignal): Promise<AnalyticsOverview> {
+      const data = await apiFetch<Raw>("/api/teacher/analytics", { signal });
+      const lesson = (data?.mostActiveLesson ?? null) as Raw;
+      return {
+        totalStudents: num(data?.totalStudents),
+        avgCompletionRate: num(data?.avgCompletionRate),
+        totalDraftsWritten: num(data?.totalDraftsWritten),
+        totalLessons: num(data?.totalLessons),
+        mostActiveLesson:
+          lesson && num(lesson.lessonId) > 0
+            ? { lessonId: num(lesson.lessonId), title: str(lesson.title) || `Chặng ${num(lesson.lessonId)}`, studentCount: num(lesson.studentCount) }
+            : null,
+        students: asList(data?.students).map(normalizeAnalyticsStudent).filter((student) => student.id),
+      };
+    },
+    async evaluate(studentId: string, signal?: AbortSignal): Promise<AiEvaluationReport> {
+      const data = await apiFetch<Raw>(`/api/teacher/ai-evaluate/${encodeURIComponent(studentId)}`, {
+        method: "POST",
+        signal,
+      });
+      const student = (data?.student ?? null) as Raw;
+      const evaluation = (data?.evaluation ?? null) as Raw;
+      const rawSource = data?.source;
+      const source = rawSource === "gemini" || rawSource === "openai" || rawSource === "demo" ? rawSource : "demo";
+      return {
+        student: {
+          id: str(student?.id) || studentId,
+          fullName: str(student?.fullName) || "Học sinh",
+          username: str(student?.username),
+          levelName: str(student?.levelName),
+          levelEmoji: str(student?.levelEmoji),
+          exp: num(student?.exp),
+          completionRate: num(student?.completionRate),
+        },
+        draftsUsed: num(data?.draftsUsed),
+        source,
+        evaluation: {
+          strengths: textList(evaluation?.strengths),
+          weaknesses: textList(evaluation?.weaknesses),
+          focusAreas: textList(evaluation?.focusAreas),
+          actionPlan: textList(evaluation?.actionPlan),
+        },
+      };
+    },
+  },
 };
+
+function normalizeDraft(d: Raw): Draft {
+  const content = str(d?.content) || str(d?.draftContent);
+  return {
+    lessonId: num(d?.lessonId),
+    textIndex: num(d?.textIndex),
+    questionIndex: num(d?.questionIndex),
+    draftContent: content,
+    content,
+    updatedAt: str(d?.updatedAt),
+  };
+}
+
+function normalizeAnalyticsStudent(raw: Raw): AnalyticsStudent {
+  return {
+    id: str(raw?.id),
+    fullName: str(raw?.fullName) || str(raw?.username) || "Học sinh",
+    username: str(raw?.username),
+    level: num(raw?.level),
+    levelName: str(raw?.levelName) || "Tân binh",
+    levelEmoji: str(raw?.levelEmoji) || "🐣",
+    exp: num(raw?.exp),
+    completionRate: Math.min(100, Math.max(0, num(raw?.completionRate))),
+    completedCount: num(raw?.completedCount),
+    draftCount: num(raw?.draftCount),
+  };
+}
+
+function textList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(str).map((item) => item.trim()).filter(Boolean);
+  const single = str(value).trim();
+  return single ? [single] : [];
+}

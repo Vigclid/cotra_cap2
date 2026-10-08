@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { addExp, addWpmRecord, getDrafts, getMyProgress, saveDraft } from "../controllers/progress.controller";
+import { addExp, addWpmRecord, getAllDrafts, getDrafts, getMyProgress, saveDraft } from "../controllers/progress.controller";
 import { checkRole, verifyToken } from "../middlewares/auth";
 
 const router = Router();
@@ -8,6 +8,7 @@ const router = Router();
 router.use(verifyToken, checkRole("student"));
 
 router.get("/me", getMyProgress);
+router.get("/drafts", getAllDrafts);
 router.get("/draft/:lessonId", getDrafts);
 router.post("/draft", saveDraft);
 router.post("/exp", addExp);

@@ -51,7 +51,53 @@ export interface Draft {
   textIndex: number;
   questionIndex: number;
   draftContent: string;
+  /** Cùng nội dung với draftContent. Backend lưu cả hai tên. */
+  content?: string;
   updatedAt: string;
+}
+
+export interface AnalyticsStudent {
+  id: string;
+  fullName: string;
+  username: string;
+  level: number;
+  levelName: string;
+  levelEmoji: string;
+  exp: number;
+  completionRate: number;
+  completedCount: number;
+  draftCount: number;
+}
+
+export interface AnalyticsOverview {
+  totalStudents: number;
+  avgCompletionRate: number;
+  totalDraftsWritten: number;
+  totalLessons: number;
+  mostActiveLesson: { lessonId: number; title: string; studentCount: number } | null;
+  students: AnalyticsStudent[];
+}
+
+export interface AiEvaluation {
+  strengths: string[];
+  weaknesses: string[];
+  focusAreas: string[];
+  actionPlan: string[];
+}
+
+export interface AiEvaluationReport {
+  student: {
+    id: string;
+    fullName: string;
+    username: string;
+    levelName: string;
+    levelEmoji: string;
+    exp: number;
+    completionRate: number;
+  };
+  draftsUsed: number;
+  source: "gemini" | "openai" | "demo";
+  evaluation: AiEvaluation;
 }
 
 export type DraftInput = Omit<Draft, "updatedAt">;

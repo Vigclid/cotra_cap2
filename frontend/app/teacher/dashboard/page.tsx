@@ -55,6 +55,9 @@ function Dashboard() {
             </span>
           </Link>
           <span className="ml-auto hidden text-sm font-extrabold text-ink/60 sm:block">{user.fullName}</span>
+          <Link href="/teacher/analytics" className="rounded-full bg-sky-200 px-4 py-2 text-sm font-extrabold text-sky-950">
+            Phân tích lớp
+          </Link>
           <Link href="/roadmap" className="rounded-full bg-surface px-4 py-2 text-sm font-extrabold shadow-soft">
             Về lớp học
           </Link>
