@@ -81,7 +81,7 @@ export function Header({ game, theme, onToggleTheme }: { game: Game; theme: "lig
                   className="inline-flex items-center gap-1.5 rounded-full bg-sky-200 px-3 py-2 text-sm font-extrabold text-sky-950 transition duration-300 ease-bounce hover:-translate-y-0.5"
                 >
                   <BarChart3 className="h-4 w-4" />
-                  <span className="hidden sm:inline">Phân tích lớp</span>
+                  <span className="hidden sm:inline">Tổng quan lớp</span>
                 </Link>
                 <Link
                   href="/teacher/dashboard"

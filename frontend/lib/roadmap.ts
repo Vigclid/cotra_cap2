@@ -24,6 +24,8 @@ type StageStyle = {
 export type RoadmapStage = StageStyle & {
   /** = lessonId trong MongoDB */
   id: number;
+  /** Khối lớp của chặng – dùng để nhóm section và khoá/mở. */
+  grade: number;
   title: string;
   /** Tên chủ điểm, bỏ tiền tố "Bài N:" – dùng cho nhãn ngắn. */
   name: string;
@@ -158,6 +160,7 @@ export function toStage(lesson: LessonSummary | LessonDetail): RoadmapStage {
   return {
     ...(STYLES[lesson.lessonId] ?? FALLBACK_STYLE),
     id: lesson.lessonId,
+    grade: lesson.grade > 0 ? lesson.grade : 6,
     title: lesson.title,
     name: stageName(lesson.title),
     theme: lesson.theme,

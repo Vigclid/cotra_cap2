@@ -3,6 +3,7 @@ import { getAuthUser } from "../middlewares/auth";
 import { Lesson } from "../models/Lesson";
 import { MAX_DRAFT_LENGTH, StudentProgress, type IDraft } from "../models/StudentProgress";
 import { User } from "../models/User";
+import { assertStudentContentOpen } from "../utils/grades";
 import { HttpError } from "../utils/HttpError";
 import { LEVELS, getLevel } from "../utils/levels";
 import { toInt, toLessonId } from "../utils/validate";
@@ -82,11 +83,12 @@ export const saveDraft: RequestHandler = async (req, res) => {
   }
   const draftContent = rawContent;
 
-  // Chỉ cho lưu nháp vào câu hỏi thực sự tồn tại.
-  const lesson = await Lesson.findOne({ lessonId }).select("texts.questions").lean();
+  // Chỉ cho lưu nháp vào câu hỏi thực sự tồn tại, và chỉ khi khối lớp đã mở.
+  const lesson = await Lesson.findOne({ lessonId }).select("grade texts.questions").lean();
   if (!lesson?.texts[textIndex]?.questions[questionIndex]) {
     throw new HttpError(404, "Không tìm thấy câu hỏi tương ứng");
   }
+  await assertStudentContentOpen(id, "student", lesson.grade);
 
   const updatedAt = new Date();
   const match = { lessonId, textIndex, questionIndex };
@@ -128,7 +130,9 @@ export const addExp: RequestHandler = async (req, res) => {
   let completedLessons: number[] | undefined;
   if (req.body?.lessonId !== undefined) {
     const lessonId = toLessonId(req.body.lessonId);
-    if (!(await Lesson.exists({ lessonId }))) throw new HttpError(404, `Không tìm thấy bài học ${lessonId}`);
+    const lesson = await Lesson.findOne({ lessonId }).select("grade").lean();
+    if (!lesson) throw new HttpError(404, `Không tìm thấy bài học ${lessonId}`);
+    await assertStudentContentOpen(id, "student", lesson.grade);
     // Lấy bản TRƯỚC khi cập nhật để biết chặng này đã hoàn thành chưa (thao tác nguyên tử).
     const before = await StudentProgress.findOneAndUpdate(
       { studentId: id },

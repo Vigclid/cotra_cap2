@@ -27,7 +27,7 @@ const TABS: NavItem<Tab>[] = [
     emoji: "🗺️",
     title: "Lộ trình",
     short: "Lộ trình",
-    subtitle: "10 chặng SGK Văn 6",
+    subtitle: "Theo từng khối lớp",
     active: "bg-peach-pastel ring-orange-300 dark:ring-orange-700",
   },
   {

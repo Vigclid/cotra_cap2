@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { resetCharacters } from "@/hooks/useCharacters";
 import { resetLessons } from "@/hooks/useLessons";
 import type { User } from "@/types/api";
 import { ApiError, TOKEN_KEY, UNAUTHORIZED_EVENT, api, clearToken, getToken, setToken } from "@/utils/apiClient";
@@ -57,6 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     (redirect: boolean) => {
       clearToken();
       resetLessons();
+      resetCharacters();
       setUser(null);
       setStatus("unauthenticated");
       if (redirect && window.location.pathname !== "/login") router.replace("/login");
@@ -80,6 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { token, user: me } = await api.auth.login(username, password);
     setToken(token);
     resetLessons();
+    resetCharacters();
     setUser(me);
     setStatus("authenticated");
     return me;

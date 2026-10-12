@@ -12,9 +12,9 @@ import { useAuth } from "@/contexts/AuthContext";
 import type { QuizItem, SpellingItem, TypingItem } from "@/types/api";
 import { api, apiErrorMessage } from "@/utils/apiClient";
 
-type TabId = "spelling" | "typing" | "quiz";
+type GameTab = "spelling" | "typing" | "quiz";
 
-const TABS: { id: TabId; emoji: string; label: string; hint: string }[] = [
+const TABS: { id: GameTab; emoji: string; label: string; hint: string }[] = [
   { id: "spelling", emoji: "👮‍♂️", label: "Cảnh sát chính tả", hint: "Câu có một từ viết sai, kèm cách viết đúng và hai cách nhiễu." },
   { id: "typing", emoji: "⌨️", label: "Bàn phím siêu tốc", hint: "Đoạn văn ngắn để học sinh gõ lại." },
   { id: "quiz", emoji: "🧠", label: "Trắc nghiệm", hint: "Câu hỏi tác giả – tác phẩm với đúng 4 đáp án." },
@@ -34,7 +34,7 @@ export default function TeacherDashboardPage() {
 function Dashboard() {
   const { user } = useAuth();
   const router = useRouter();
-  const [tab, setTab] = useState<TabId>("spelling");
+  const [tab, setTab] = useState<GameTab>("spelling");
 
   useEffect(() => {
     if (user && user.role === "student") router.replace("/roadmap");
@@ -56,7 +56,7 @@ function Dashboard() {
           </Link>
           <span className="ml-auto hidden text-sm font-extrabold text-ink/60 sm:block">{user.fullName}</span>
           <Link href="/teacher/analytics" className="rounded-full bg-sky-200 px-4 py-2 text-sm font-extrabold text-sky-950">
-            Phân tích lớp
+            Tổng quan lớp
           </Link>
           <Link href="/roadmap" className="rounded-full bg-surface px-4 py-2 text-sm font-extrabold shadow-soft">
             Về lớp học
@@ -89,7 +89,7 @@ function Dashboard() {
   );
 }
 
-function GameBoard({ tab }: { tab: TabId }) {
+function GameBoard({ tab }: { tab: GameTab }) {
   const meta = TABS.find((item) => item.id === tab)!;
   const [rows, setRows] = useState<Array<SpellingItem | TypingItem | QuizItem>>([]);
   const [loading, setLoading] = useState(true);
@@ -295,7 +295,7 @@ function EditorModal({
   onClose,
   onSaved,
 }: {
-  tab: TabId;
+  tab: GameTab;
   item: SpellingItem | TypingItem | QuizItem | null;
   onClose: () => void;
   onSaved: () => void;

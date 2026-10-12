@@ -3,6 +3,7 @@ import { getAuthUser } from "../middlewares/auth";
 import { Lesson } from "../models/Lesson";
 import { StudentProgress } from "../models/StudentProgress";
 import { HttpError } from "../utils/HttpError";
+import { assertStudentContentOpen, coerceGrade } from "../utils/grades";
 import { toLessonId } from "../utils/validate";
 
 /**
@@ -13,14 +14,15 @@ export const listLessons: RequestHandler = async (req, res) => {
   const user = getAuthUser(req);
 
   const [lessons, progress] = await Promise.all([
-    Lesson.find().sort({ lessonId: 1 }).select("-texts.fullText -__v").lean(),
+    Lesson.find().sort({ grade: 1, lessonId: 1 }).select("-texts.fullText -__v").lean(),
     user.role === "student" ? StudentProgress.findOne({ studentId: user.id }).select("completedLessons").lean() : null,
   ]);
 
   const completed = new Set(progress?.completedLessons ?? []);
   res.json({
-    lessons: lessons.map(({ _id, texts, ...lesson }) => ({
+    lessons: lessons.map(({ _id, texts, grade, ...lesson }) => ({
       ...lesson,
+      grade: coerceGrade(grade),
       textCount: texts.length,
       textNames: texts.map((t) => t.name),
       completed: completed.has(lesson.lessonId),
@@ -30,8 +32,10 @@ export const listLessons: RequestHandler = async (req, res) => {
 
 /** GET /api/lessons/:id – chi tiết một chặng (kèm toàn văn và câu hỏi). `:id` là lessonId (1, 2, 3...). */
 export const getLesson: RequestHandler = async (req, res) => {
+  const user = getAuthUser(req);
   const lessonId = toLessonId(req.params.id);
   const lesson = await Lesson.findOne({ lessonId }).select("-__v").lean();
   if (!lesson) throw new HttpError(404, `Không tìm thấy bài học ${lessonId}`);
-  res.json({ lesson });
+  await assertStudentContentOpen(user.id, user.role, lesson.grade);
+  res.json({ lesson: { ...lesson, grade: coerceGrade(lesson.grade) } });
 };

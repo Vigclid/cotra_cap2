@@ -5,6 +5,7 @@ import {
   listLessonsAdmin,
   listStudents,
   updateLesson,
+  updateStudent,
 } from "../controllers/admin.controller";
 import { checkRole, verifyToken } from "../middlewares/auth";
 import adminGameRoutes from "./adminGames.routes";
@@ -20,6 +21,7 @@ router.put("/lessons/:id", updateLesson);
 router.delete("/lessons/:id", deleteLesson);
 
 router.get("/students", listStudents);
+router.put("/students/:id", updateStudent);
 router.use("/games", adminGameRoutes);
 
 export default router;

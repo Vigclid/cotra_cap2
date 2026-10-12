@@ -1,8 +1,10 @@
 import type { QuizQuestion, SpellingRound, TypingPassage } from "@/lib/games-data";
 import type {
   AiEvaluationReport,
+  AnalyticsLesson,
   AnalyticsOverview,
   AnalyticsStudent,
+  CharacterSummary,
   Draft,
   DraftInput,
   ExpResult,
@@ -11,6 +13,8 @@ import type {
   LessonSummary,
   LessonText,
   LoginResponse,
+  ManagedStudent,
+  ManagedStudentPage,
   QuizItem,
   RegisterInput,
   Role,
@@ -108,6 +112,17 @@ export const apiErrorMessage = (err: unknown) =>
 const str = (v: unknown) => (typeof v === "string" ? v : "");
 const num = (v: unknown, fallback = 0) => (typeof v === "number" && Number.isFinite(v) ? v : fallback);
 const strArray = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+const numList = (v: unknown) =>
+  Array.isArray(v)
+    ? [
+        ...new Set(
+          v.flatMap((item) => {
+            const value = typeof item === "number" ? item : Number(item);
+            return Number.isInteger(value) && value > 0 ? [value] : [];
+          }),
+        ),
+      ]
+    : [];
 const ROLES: Role[] = ["student", "teacher", "admin"];
 
 type Raw = Record<string, unknown> | null | undefined;
@@ -122,6 +137,7 @@ export function normalizeUser(raw: Raw): User {
     exp: num(raw?.exp),
     level: num(raw?.level),
     badges: strArray(raw?.badges),
+    ...(role === "student" ? { grade: num(raw?.grade, 6) || 6 } : {}),
   };
 }
 
@@ -137,6 +153,7 @@ const normalizeText = (raw: unknown): LessonText => {
 
 const normalizeBase = (raw: Raw) => ({
   lessonId: num(raw?.lessonId),
+  grade: num(raw?.grade, 6) || 6,
   title: str(raw?.title),
   theme: str(raw?.theme),
   quote: normalizeQuote(raw?.quote),
@@ -247,12 +264,38 @@ export const api = {
       return asList(data?.lessons)
         .map(normalizeLessonSummary)
         .filter((l) => l.lessonId > 0)
-        .sort((a, b) => a.lessonId - b.lessonId);
+        .sort((a, b) => a.grade - b.grade || a.lessonId - b.lessonId);
     },
     async get(lessonId: number, signal?: AbortSignal): Promise<LessonDetail> {
       const data = await apiFetch<{ lesson?: Raw }>(`/api/lessons/${lessonId}`, { signal });
       return normalizeLessonDetail(data?.lesson);
     },
+  },
+
+  characters: {
+    async list(signal?: AbortSignal): Promise<CharacterSummary[]> {
+      const data = await apiFetch<{ characters?: unknown }>("/api/characters", { signal });
+      return asList(data?.characters)
+        .map(normalizeCharacter)
+        .filter((character) => character.id)
+        .sort((a, b) => a.grade - b.grade || a.lesson - b.lesson || a.name.localeCompare(b.name, "vi"));
+    },
+  },
+
+  adminStudents: {
+    async list(grade?: number, signal?: AbortSignal, page = 1): Promise<ManagedStudentPage> {
+      const params = new URLSearchParams({ page: String(page), limit: "100" });
+      if (grade) params.set("grade", String(grade));
+      const data = await apiFetch<Raw>(`/api/admin/students?${params}`, { signal });
+      return {
+        page: num(data?.page, page) || page,
+        limit: num(data?.limit, 100) || 100,
+        total: num(data?.total),
+        students: asList(data?.students).map(normalizeManagedStudent).filter((student) => student.id),
+      };
+    },
+    update: (id: string, body: { fullName: string; grade: number }) =>
+      apiFetch<{ message: string }>(`/api/admin/students/${encodeURIComponent(id)}`, { method: "PUT", body }),
   },
 
   progress: {
@@ -307,6 +350,7 @@ export const api = {
           lesson && num(lesson.lessonId) > 0
             ? { lessonId: num(lesson.lessonId), title: str(lesson.title) || `Chặng ${num(lesson.lessonId)}`, studentCount: num(lesson.studentCount) }
             : null,
+        lessons: asList(data?.lessons).map(normalizeAnalyticsLesson).filter((item) => item.lessonId > 0),
         students: asList(data?.students).map(normalizeAnalyticsStudent).filter((student) => student.id),
       };
     },
@@ -342,6 +386,36 @@ export const api = {
   },
 };
 
+function normalizeCharacter(raw: Raw): CharacterSummary {
+  return {
+    id: str(raw?.id),
+    name: str(raw?.name),
+    work: str(raw?.work),
+    author: str(raw?.author),
+    grade: num(raw?.grade, 6) || 6,
+    lesson: num(raw?.lesson),
+    emoji: str(raw?.emoji) || "📖",
+    gradient: str(raw?.gradient) || "from-slate-200 to-slate-300",
+    tagline: str(raw?.tagline),
+    sampleQuestions: strArray(raw?.sampleQuestions),
+  };
+}
+
+function normalizeManagedStudent(raw: Raw): ManagedStudent {
+  return {
+    id: str(raw?.id),
+    username: str(raw?.username),
+    fullName: str(raw?.fullName) || str(raw?.username) || "Học sinh",
+    grade: num(raw?.grade, 6) || 6,
+    exp: num(raw?.exp),
+    level: num(raw?.level),
+    levelName: str(raw?.levelName) || "Tân binh",
+    completedCount: num(raw?.completedCount),
+    draftCount: num(raw?.draftCount),
+    joinedAt: str(raw?.joinedAt),
+  };
+}
+
 function normalizeDraft(d: Raw): Draft {
   const content = str(d?.content) || str(d?.draftContent);
   return {
@@ -354,11 +428,20 @@ function normalizeDraft(d: Raw): Draft {
   };
 }
 
+function normalizeAnalyticsLesson(raw: Raw): AnalyticsLesson {
+  return {
+    lessonId: num(raw?.lessonId),
+    title: str(raw?.title) || `Chặng ${num(raw?.lessonId)}`,
+    grade: num(raw?.grade, 6) || 6,
+  };
+}
+
 function normalizeAnalyticsStudent(raw: Raw): AnalyticsStudent {
   return {
     id: str(raw?.id),
     fullName: str(raw?.fullName) || str(raw?.username) || "Học sinh",
     username: str(raw?.username),
+    grade: num(raw?.grade, 6) || 6,
     level: num(raw?.level),
     levelName: str(raw?.levelName) || "Tân binh",
     levelEmoji: str(raw?.levelEmoji) || "🐣",
@@ -366,6 +449,8 @@ function normalizeAnalyticsStudent(raw: Raw): AnalyticsStudent {
     completionRate: Math.min(100, Math.max(0, num(raw?.completionRate))),
     completedCount: num(raw?.completedCount),
     draftCount: num(raw?.draftCount),
+    completedLessonIds: numList(raw?.completedLessonIds),
+    draftLessonIds: numList(raw?.draftLessonIds),
   };
 }
 

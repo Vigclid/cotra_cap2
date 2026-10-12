@@ -4,6 +4,7 @@ import { Lesson } from "../models/Lesson";
 import { StudentProgress, type IDraft } from "../models/StudentProgress";
 import { User } from "../models/User";
 import { generateJson, type AiSource } from "../utils/aiClient";
+import { coerceGrade } from "../utils/grades";
 import { HttpError } from "../utils/HttpError";
 import { getLevel } from "../utils/levels";
 import { toObjectId } from "../utils/validate";
@@ -29,12 +30,13 @@ type DraftSample = {
 
 /**
  * GET /api/teacher/analytics
- * Bốn chỉ số tổng quan + bảng tiến độ từng học sinh (để trang /teacher/analytics một lần gọi là đủ).
+ * Chỉ số tổng quan, từng học sinh (kèm khối lớp và các chặng đã học) và danh mục chặng.
+ * Trang tổng quan lọc theo lớp và vẽ biểu đồ từ một lần gọi này.
  */
 export const getAnalytics: RequestHandler = async (_req, res) => {
   const [studentUsers, lessons] = await Promise.all([
-    User.find({ role: "student" }).select("username fullName exp").lean(),
-    Lesson.find().select("lessonId title").sort({ lessonId: 1 }).lean(),
+    User.find({ role: "student" }).select("username fullName exp grade").lean(),
+    Lesson.find().select("lessonId title grade").sort({ grade: 1, lessonId: 1 }).lean(),
   ]);
 
   const lessonIds = new Set(lessons.map((lesson) => lesson.lessonId));
@@ -60,10 +62,14 @@ export const getAnalytics: RequestHandler = async (_req, res) => {
   const students = studentUsers.map((student) => {
     const progress = progressById.get(String(student._id));
     const writtenDrafts = (progress?.drafts ?? []).filter((draft) => draftText(draft).trim().length > 0);
-    const completedCount =
+    const completedLessonIds =
       totalLessons === 0
-        ? 0
-        : new Set((progress?.completedLessons ?? []).filter((lessonId) => lessonIds.has(lessonId))).size;
+        ? []
+        : [...new Set((progress?.completedLessons ?? []).filter((lessonId) => lessonIds.has(lessonId)))];
+    const draftLessonIds = [
+      ...new Set(writtenDrafts.map((draft) => draft.lessonId).filter((lessonId) => lessonIds.has(lessonId))),
+    ];
+    const completedCount = completedLessonIds.length;
     const level = getLevel(student.exp);
     const studentId = String(student._id);
 
@@ -80,6 +86,7 @@ export const getAnalytics: RequestHandler = async (_req, res) => {
       id: studentId,
       fullName: student.fullName,
       username: student.username,
+      grade: coerceGrade(student.grade),
       level: level.index,
       levelName: level.name,
       levelEmoji: level.emoji,
@@ -87,6 +94,8 @@ export const getAnalytics: RequestHandler = async (_req, res) => {
       completionRate: totalLessons === 0 ? 0 : Math.round((completedCount / totalLessons) * 100),
       completedCount,
       draftCount: writtenDrafts.length,
+      completedLessonIds,
+      draftLessonIds,
     };
   });
 
@@ -125,6 +134,11 @@ export const getAnalytics: RequestHandler = async (_req, res) => {
           studentCount: mostActive.studentCount,
         }
       : null,
+    lessons: lessons.map((lesson) => ({
+      lessonId: lesson.lessonId,
+      title: lesson.title,
+      grade: coerceGrade(lesson.grade),
+    })),
     students,
   });
 };

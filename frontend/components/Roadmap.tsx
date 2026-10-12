@@ -2,13 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronRight, Lock, PartyPopper, RefreshCw } from "lucide-react";
+import { useStudentGrade } from "@/hooks/useStudentGrade";
 import { markLessonsCompleted, useLessons } from "@/hooks/useLessons";
 import { popConfetti } from "@/lib/confetti";
+import { gradeLockMessage, groupByGrade, isGradeLocked } from "@/lib/grades";
 import { ROADMAP_EXP, toStage, type RoadmapStage } from "@/lib/roadmap";
 import type { ExpResult } from "@/types/api";
 import { LessonModal } from "./LessonModal";
 import { Mascot } from "./Mascot";
-import { BouncyButton, Card, ErrorBox } from "./ui";
+import { BouncyButton, Card, CuteLock, ErrorBox, LockToast } from "./ui";
 
 const NODE = 84;
 const ROW_H = 150;
@@ -30,10 +32,11 @@ export function Roadmap({
   preview?: boolean;
 }) {
   const { lessons, error, reload } = useLessons();
+  const { ready, grade: studentGrade } = useStudentGrade();
 
+  if (!ready || (!lessons && !error)) return <RoadmapSkeleton />;
   if (error && !lessons) return <RoadmapError message={error} onRetry={reload} />;
-  if (!lessons) return <RoadmapSkeleton />;
-  if (lessons.length === 0) {
+  if (!lessons || lessons.length === 0) {
     return (
       <Card className="flex flex-col items-center gap-2 py-12 text-center">
         <span className="text-5xl">🗺️</span>
@@ -42,16 +45,18 @@ export function Roadmap({
       </Card>
     );
   }
-  return <RoadmapBoard lessons={lessons} preview={preview} onReward={onReward} />;
+  return <RoadmapBoard lessons={lessons} preview={preview} studentGrade={studentGrade} onReward={onReward} />;
 }
 
 function RoadmapBoard({
   lessons,
   preview,
+  studentGrade,
   onReward,
 }: {
   lessons: NonNullable<ReturnType<typeof useLessons>["lessons"]>;
   preview: boolean;
+  studentGrade: number | null;
   onReward: (exp: number, lessonId?: number) => Promise<ExpResult | null>;
 }) {
   const stages = useMemo(() => lessons.map(toStage), [lessons]);
@@ -59,25 +64,56 @@ function RoadmapBoard({
   const [openId, setOpenId] = useState<number | null>(null);
   const [completing, setCompleting] = useState(false);
   const [completeError, setCompleteError] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(toastTimer.current), []);
 
-  const doneCount = completed.length;
-  const current = preview ? null : (stages.find((s) => !completed.includes(s.id)) ?? null);
-  const openIndex = stages.findIndex((s) => s.id === openId);
+  const showToast = (message: string) => {
+    setToast(message);
+    clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2800);
+  };
+
+  const sections = useMemo(
+    () =>
+      groupByGrade(stages).map(([grade, sectionStages]) => {
+        const gradeLocked = !preview && isGradeLocked(studentGrade, grade);
+        const current = preview || gradeLocked ? null : (sectionStages.find((stage) => !completed.includes(stage.id)) ?? null);
+        const currentStep = current ? sectionStages.findIndex((stage) => stage.id === current.id) + 1 : 0;
+        return { grade, stages: sectionStages, gradeLocked, current, currentStep };
+      }),
+    [stages, completed, preview, studentGrade],
+  );
+
+  const playable = stages.filter((stage) => preview || !isGradeLocked(studentGrade, stage.grade));
+  const doneCount = playable.filter((stage) => completed.includes(stage.id)).length;
+  const focus = sections.find((section) => section.grade === studentGrade && section.current) ?? sections.find((section) => section.current);
+  const openIndex = stages.findIndex((stage) => stage.id === openId);
   const openStage = stages[openIndex] ?? null;
-  const nextStage = stages[openIndex + 1] ?? null;
+  const openSection = openStage ? sections.find((section) => section.grade === openStage.grade) : null;
+  const nextStage = openSection && openIndex >= 0 ? (openSection.stages[openSection.stages.findIndex((stage) => stage.id === openId) + 1] ?? null) : null;
 
-  /** Chỉ mở được chặng đã xong hoặc chặng hiện tại – các chặng sau bị khóa (chế độ xem trước thì mở hết). */
-  const isUnlocked = (id: number) => preview || completed.includes(id) || id === current?.id;
+  /** Trong một khối đã mở: chỉ học chặng đã xong hoặc chặng đang tới. Khối cao hơn thì khoá cả section. */
+  const canOpen = (stage: RoadmapStage) => {
+    if (preview) return true;
+    if (isGradeLocked(studentGrade, stage.grade)) return false;
+    const section = sections.find((item) => item.grade === stage.grade);
+    return completed.includes(stage.id) || stage.id === section?.current?.id;
+  };
 
-  const open = (id: number) => {
-    if (!isUnlocked(id)) return;
+  const open = (stage: RoadmapStage) => {
+    if (!canOpen(stage)) {
+      if (isGradeLocked(studentGrade, stage.grade)) showToast(gradeLockMessage(stage.grade));
+      return;
+    }
     setCompleteError(null);
-    setOpenId(id);
+    setOpenId(stage.id);
   };
   const closePanel = useCallback(() => setOpenId(null), []);
 
   const complete = async (id: number) => {
-    if (preview || completing || completed.includes(id) || !isUnlocked(id)) return;
+    const stage = stages.find((item) => item.id === id);
+    if (preview || completing || !stage || completed.includes(id) || !canOpen(stage)) return;
     setCompleting(true);
     setCompleteError(null);
     const res = await onReward(ROADMAP_EXP, id);
@@ -90,24 +126,31 @@ function RoadmapBoard({
     popConfetti();
   };
 
+  const jumpTo = (grade: number) => {
+    document.getElementById(`lo-trinh-lop-${grade}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   return (
     <div className="space-y-6">
       <Card className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0 flex-1">
           <h2 className="text-xl font-extrabold">🗺️ Lộ trình Học tập</h2>
           <p className="text-sm font-semibold text-ink/60">
-            {stages.length} chặng bám sát SGK Ngữ Văn 6 – Kết nối tri thức. Xong chặng trước mới mở khóa chặng sau, mỗi
-            chặng được <span className="font-extrabold text-amber-600 dark:text-amber-300">+{ROADMAP_EXP} EXP</span>!
+            {preview
+              ? `${sections.length} khối lớp, ${stages.length} chặng. Thầy cô xem trước được mọi lộ trình.`
+              : `Em đang học Lớp ${studentGrade}. Chặng từ Lớp ${studentGrade} trở xuống đã mở. Mỗi chặng được `}
+            {!preview && <span className="font-extrabold text-amber-600 dark:text-amber-300">+{ROADMAP_EXP} EXP</span>}
+            {!preview && "!"}
           </p>
           <div className="mt-3 flex items-center gap-3">
             <div className="h-3 flex-1 overflow-hidden rounded-full bg-cream shadow-inner">
               <div
                 className="h-full rounded-full bg-gradient-to-r from-lime-300 via-amber-300 to-pink-300 transition-[width] duration-700 ease-bounce"
-                style={{ width: `${Math.max((doneCount / stages.length) * 100, 3)}%` }}
+                style={{ width: `${playable.length === 0 ? 0 : Math.max((doneCount / playable.length) * 100, doneCount > 0 ? 3 : 0)}%` }}
               />
             </div>
             <span className="shrink-0 text-sm font-extrabold text-ink/70">
-              {doneCount}/{stages.length} chặng
+              {doneCount}/{playable.length} chặng
             </span>
           </div>
         </div>
@@ -115,44 +158,84 @@ function RoadmapBoard({
           <span className="inline-flex shrink-0 items-center gap-2 rounded-full bg-sky-pastel px-5 py-3 font-extrabold text-sky-800 dark:text-sky-200">
             👀 Chế độ xem trước
           </span>
-        ) : current ? (
+        ) : focus?.current ? (
           <button
-            onClick={() => setOpenId(current.id)}
+            onClick={() => open(focus.current!)}
             className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full bg-lime-300 px-5 py-3 font-extrabold text-lime-950 shadow-[0_5px_0_#84cc16] transition duration-300 ease-bounce hover:-translate-y-0.5 active:translate-y-1 active:shadow-none"
           >
-            Tiếp tục: Chặng {current.id} <ChevronRight className="h-5 w-5" />
+            Tiếp tục: Lớp {focus.grade} · Chặng {focus.currentStep} <ChevronRight className="h-5 w-5" />
           </button>
         ) : (
           <span className="inline-flex shrink-0 items-center gap-2 rounded-full bg-lemon-pastel px-5 py-3 font-extrabold text-amber-700 dark:text-amber-300">
-            <PartyPopper className="h-5 w-5" /> Đã về đích!
+            <PartyPopper className="h-5 w-5" /> Đã về đích các lớp đang mở!
           </span>
         )}
       </Card>
 
-      <div className="rounded-[2rem] bg-surface/60 px-2 py-6 shadow-soft sm:px-6">
-        <RoadmapPath
-          stages={stages}
-          completed={completed}
-          currentId={current?.id ?? null}
-          allDone={!preview && !current}
-          preview={preview}
-          onOpen={open}
-        />
+      <div className="flex flex-wrap gap-2">
+        {sections.map((section) => (
+          <button
+            key={section.grade}
+            type="button"
+            onClick={() => jumpTo(section.grade)}
+            className={`rounded-full px-4 py-2 text-sm font-extrabold transition duration-300 ease-bounce hover:-translate-y-0.5 ${
+              section.gradeLocked ? "bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-300" : "bg-lime-200 text-lime-950"
+            }`}
+          >
+            {section.gradeLocked ? "🔒" : "📖"} Lộ trình Lớp {section.grade}
+          </button>
+        ))}
       </div>
+
+      {sections.map((section) => {
+        const sectionDone = section.stages.filter((stage) => completed.includes(stage.id)).length;
+        return (
+          <section key={section.grade} id={`lo-trinh-lop-${section.grade}`} className="scroll-mt-28 space-y-3">
+            <div className="flex flex-wrap items-end justify-between gap-2 px-1">
+              <div>
+                <h3 className="text-lg font-black">Lộ trình Lớp {section.grade}</h3>
+                <p className="text-sm font-semibold text-ink/55">
+                  {section.gradeLocked
+                    ? gradeLockMessage(section.grade)
+                    : `${sectionDone}/${section.stages.length} chặng · xong chặng trước mới mở chặng sau`}
+                </p>
+              </div>
+              {section.gradeLocked && (
+                <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-extrabold text-amber-800">Đang khoá</span>
+              )}
+            </div>
+            <div className={`rounded-[2rem] bg-surface/60 px-2 py-6 shadow-soft sm:px-6 ${section.gradeLocked ? "grayscale-[0.35]" : ""}`}>
+              <RoadmapPath
+                stages={section.stages}
+                completed={completed}
+                currentId={section.current?.id ?? null}
+                allDone={!preview && !section.gradeLocked && !section.current}
+                preview={preview}
+                gradeLocked={section.gradeLocked}
+                gradeHint={gradeLockMessage(section.grade)}
+                lockHint={section.current ? `Xong Chặng ${section.currentStep} để mở khóa nhé!` : ""}
+                onOpen={open}
+                onGradeLock={() => showToast(gradeLockMessage(section.grade))}
+              />
+            </div>
+          </section>
+        );
+      })}
 
       {openStage && (
         <LessonModal
           stage={openStage}
           done={completed.includes(openStage.id)}
           preview={preview}
-          hasNext={nextStage !== null}
+          hasNext={nextStage !== null && canOpen(nextStage)}
           completing={completing}
           completeError={completeError}
           onClose={closePanel}
           onComplete={() => complete(openStage.id)}
-          onNext={() => (nextStage && isUnlocked(nextStage.id) ? open(nextStage.id) : current && open(current.id))}
+          onNext={() => (nextStage && canOpen(nextStage) ? open(nextStage) : focus?.current && open(focus.current))}
         />
       )}
+      <LockToast message={toast} />
     </div>
   );
 }
@@ -225,14 +308,22 @@ function RoadmapPath({
   currentId,
   allDone,
   preview,
+  gradeLocked,
+  gradeHint,
+  lockHint,
   onOpen,
+  onGradeLock,
 }: {
   stages: RoadmapStage[];
   completed: number[];
   currentId: number | null;
   allDone: boolean;
   preview: boolean;
-  onOpen: (id: number) => void;
+  gradeLocked: boolean;
+  gradeHint: string;
+  lockHint: string;
+  onOpen: (stage: RoadmapStage) => void;
+  onGradeLock: () => void;
 }) {
   const [ref, width] = useWidth<HTMLDivElement>();
   const center = width / 2;
@@ -299,11 +390,14 @@ function RoadmapPath({
           index={i}
           point={points[i]}
           width={width}
-          done={completed.includes(stage.id)}
+          done={completed.includes(stage.id) && !gradeLocked}
           current={stage.id === currentId}
           unlocked={preview}
-          lockHint={currentId === null ? "" : `Xong Chặng ${currentId} để mở khóa nhé!`}
-          onOpen={() => onOpen(stage.id)}
+          gradeLocked={gradeLocked}
+          gradeHint={gradeHint}
+          lockHint={lockHint}
+          onOpen={() => onOpen(stage)}
+          onGradeLock={onGradeLock}
         />
       ))}
 
@@ -338,8 +432,11 @@ function StageNode({
   done,
   current,
   unlocked,
+  gradeLocked,
+  gradeHint,
   lockHint,
   onOpen,
+  onGradeLock,
 }: {
   stage: RoadmapStage;
   index: number;
@@ -349,16 +446,23 @@ function StageNode({
   current: boolean;
   /** Chế độ xem trước: không khóa nhưng vẫn giữ màu "chưa hoàn thành". */
   unlocked: boolean;
+  gradeLocked: boolean;
+  gradeHint: string;
   lockHint: string;
   onOpen: () => void;
+  onGradeLock: () => void;
 }) {
-  const locked = !done && !current && !unlocked;
+  const locked = gradeLocked || (!done && !current && !unlocked);
   const [shaking, setShaking] = useState(false);
   const [hintVisible, setHintVisible] = useState(false);
   const hintTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(hintTimer.current), []);
 
   const handleClick = () => {
+    if (gradeLocked) {
+      onGradeLock();
+      return;
+    }
     if (!locked) return onOpen();
     setShaking(true);
     setHintVisible(true);
@@ -371,11 +475,13 @@ function StageNode({
   const gap = NODE / 2 + 14;
   const labelWidth = Math.max(Math.min(labelLeft ? point.x - gap - 4 : width - point.x - gap - 4, 210), 80);
 
-  const tone = done
-    ? stage.done
-    : current || unlocked
-      ? stage.idle
-      : "cursor-not-allowed bg-slate-200 text-slate-500 shadow-[0_6px_0_#cbd5e1] dark:bg-slate-700 dark:text-slate-300 dark:shadow-[0_6px_0_#475569]";
+  const tone = gradeLocked
+    ? "cursor-not-allowed bg-slate-200 text-slate-500 grayscale shadow-[0_6px_0_#cbd5e1] dark:bg-slate-700 dark:text-slate-300 dark:shadow-[0_6px_0_#475569]"
+    : done
+      ? stage.done
+      : current || unlocked
+        ? stage.idle
+        : "cursor-not-allowed bg-slate-200 text-slate-500 shadow-[0_6px_0_#cbd5e1] dark:bg-slate-700 dark:text-slate-300 dark:shadow-[0_6px_0_#475569]";
 
   return (
     <div className="absolute animate-pop-in" style={{ left: 0, top: 0, animationDelay: `${index * 60}ms` }}>
@@ -398,11 +504,13 @@ function StageNode({
       )}
 
       <button
+        type="button"
         onClick={handleClick}
         onAnimationEnd={(e) => e.animationName === "shake" && setShaking(false)}
+        disabled={gradeLocked}
         aria-disabled={locked}
-        aria-label={`Chặng ${stage.id}: ${stage.name}${done ? " – đã hoàn thành" : locked ? " – đang khóa" : ""}`}
-        className={`group absolute grid place-items-center rounded-full transition-[background-color,box-shadow,scale,translate] duration-300 ease-bounce focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-violet-300 ${
+        aria-label={`Chặng ${index + 1}: ${stage.name}${done ? " – đã hoàn thành" : locked ? " – đang khóa" : ""}`}
+        className={`group absolute grid place-items-center rounded-full transition-[background-color,box-shadow,scale,translate] duration-300 ease-bounce focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-violet-300 disabled:cursor-not-allowed ${
           locked ? "" : "hover:scale-110 active:translate-y-1.5 active:shadow-none"
         } ${shaking ? "animate-shake" : ""} ${tone}`}
         style={{ left: point.x - NODE / 2, top: point.y - NODE / 2, width: NODE, height: NODE }}
@@ -418,7 +526,7 @@ function StageNode({
         >
           {stage.emoji}
         </span>
-        {locked && (
+        {locked && !gradeLocked && (
           <span className="absolute -right-1 -top-1 grid h-8 w-8 place-items-center rounded-full bg-white text-slate-400 shadow-soft ring-4 ring-slate-100 dark:bg-slate-600 dark:text-slate-200 dark:ring-slate-800">
             <Lock className="h-4 w-4" strokeWidth={3} />
           </span>
@@ -430,7 +538,20 @@ function StageNode({
         )}
       </button>
 
+      {gradeLocked && (
+        <button
+          type="button"
+          onClick={onGradeLock}
+          aria-label={gradeHint}
+          className="absolute z-20 cursor-not-allowed rounded-full"
+          style={{ left: point.x - NODE / 2, top: point.y - NODE / 2, width: NODE, height: NODE }}
+        >
+          <CuteLock hint={gradeHint} className="-right-1.5 -top-1.5" />
+        </button>
+      )}
+
       <button
+        type="button"
         onClick={handleClick}
         tabIndex={-1}
         className={`absolute -translate-y-1/2 rounded-2xl px-2 py-1 transition duration-300 ease-bounce ${
@@ -443,7 +564,7 @@ function StageNode({
         }}
       >
         <span className={`block text-[11px] font-black uppercase tracking-widest ${done ? "text-emerald-500" : "text-ink/40"}`}>
-          Chặng {stage.id} {done && "✓"}
+          Chặng {index + 1} {done && "✓"}
         </span>
         <span className="block text-sm font-extrabold leading-snug sm:text-base">{stage.name}</span>
         <span className="mt-0.5 inline-block rounded-full bg-cream px-2 py-0.5 text-[11px] font-bold text-ink/60">

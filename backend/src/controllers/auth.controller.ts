@@ -5,6 +5,7 @@ import { getAuthUser, signToken } from "../middlewares/auth";
 import { StudentProgress } from "../models/StudentProgress";
 import { User } from "../models/User";
 import { HttpError } from "../utils/HttpError";
+import { coerceGrade } from "../utils/grades";
 import { getLevel } from "../utils/levels";
 
 type PublicUserSource = {
@@ -15,13 +16,21 @@ type PublicUserSource = {
   exp: number;
   level: number;
   badges: string[];
+  grade?: number;
 };
 
 /** Dữ liệu user an toàn để trả cho client (không bao giờ có password). */
 export function toPublicUser(user: PublicUserSource) {
   const base = { id: String(user._id), username: user.username, fullName: user.fullName, role: user.role };
   if (user.role !== "student") return base;
-  return { ...base, exp: user.exp, level: user.level, levelName: getLevel(user.exp).name, badges: user.badges };
+  return {
+    ...base,
+    exp: user.exp,
+    level: user.level,
+    levelName: getLevel(user.exp).name,
+    badges: user.badges,
+    grade: coerceGrade(user.grade),
+  };
 }
 
 /** So sánh mã giáo viên không lộ độ dài qua thời gian trả về. */

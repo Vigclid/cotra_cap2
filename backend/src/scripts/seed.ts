@@ -5,6 +5,7 @@
  * Chạy lại bao nhiêu lần cũng được, không sinh dữ liệu trùng.
  */
 import { connectDB, disconnectDB } from "../config/db";
+import { Character } from "../models/Character";
 import { Lesson } from "../models/Lesson";
 import { QuizQuestion } from "../models/QuizQuestion";
 import { SpellingQuestion } from "../models/SpellingQuestion";
@@ -12,6 +13,7 @@ import { StudentProgress } from "../models/StudentProgress";
 import { TypingText } from "../models/TypingText";
 import { User, type Role } from "../models/User";
 import { quizSeed, spellingSeed, typingSeed } from "./gamesData";
+import { charactersSeed } from "./charactersData";
 import { lessonsData } from "./lessonsData";
 
 const SAMPLE_USERS: { username: string; password: string; fullName: string; role: Role }[] = [
@@ -25,7 +27,7 @@ async function seedLessons() {
   console.log(`🧹 Đã xoá ${deletedCount} bài học cũ`);
 
   // Frontend dùng `id`, DB dùng `lessonId`.
-  const docs = lessonsData.map(({ id, ...lesson }) => ({ lessonId: id, ...lesson }));
+  const docs = lessonsData.map(({ id, ...lesson }) => ({ lessonId: id, grade: 6, ...lesson }));
   const inserted = await Lesson.insertMany(docs);
   console.log(`📚 Đã thêm ${inserted.length} bài học`);
 }
@@ -57,6 +59,23 @@ async function seedIfEmpty(label: string, count: () => Promise<number>, insert: 
   console.log(`🎮 ${label}: đã thêm ${inserted.length} câu mẫu`);
 }
 
+/** Gắn khối 6 cho dữ liệu cũ chưa có field `grade`, rồi nạp nhân vật nếu collection còn trống. */
+async function seedCharacters() {
+  const [lessonBackfill, studentBackfill] = await Promise.all([
+    Lesson.updateMany({ $or: [{ grade: { $exists: false } }, { grade: null }] }, { $set: { grade: 6 } }),
+    User.updateMany({ role: "student", $or: [{ grade: { $exists: false } }, { grade: null }] }, { $set: { grade: 6 } }),
+  ]);
+  console.log(`🎒 Đã gắn Lớp 6 cho ${lessonBackfill.modifiedCount} bài học và ${studentBackfill.modifiedCount} học sinh cũ`);
+
+  const existing = await Character.countDocuments();
+  if (existing > 0) {
+    console.log(`🎭 Nhân vật: giữ ${existing} nhân vật đã có`);
+    return;
+  }
+  const inserted = await Character.insertMany(charactersSeed);
+  console.log(`🎭 Nhân vật: đã thêm ${inserted.length} nhân vật Lớp 6`);
+}
+
 async function seedGames() {
   await seedIfEmpty(
     "Cảnh sát chính tả",
@@ -78,11 +97,17 @@ async function seedGames() {
 async function main() {
   await connectDB();
   const gamesOnly = process.argv.includes("--games");
-  if (!gamesOnly) {
-    await seedLessons();
-    await seedUsers();
+  const charactersOnly = process.argv.includes("--characters");
+  if (charactersOnly) {
+    await seedCharacters();
+  } else {
+    if (!gamesOnly) {
+      await seedLessons();
+      await seedUsers();
+      await seedCharacters();
+    }
+    await seedGames();
   }
-  await seedGames();
   console.log("✅ Seed hoàn tất");
 }
 

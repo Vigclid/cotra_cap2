@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
-import { Check, Copy, LoaderCircle, TriangleAlert } from "lucide-react";
+import { Check, Copy, LoaderCircle, Lock, TriangleAlert } from "lucide-react";
 
 export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
   return <div className={`rounded-2xl bg-surface p-5 shadow-soft sm:p-6 ${className}`}>{children}</div>;
@@ -62,6 +62,36 @@ export function CopyButton({ text }: { text: string }) {
       {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
       {copied ? "Đã chép" : "Sao chép"}
     </button>
+  );
+}
+
+/** Ổ khoá dễ thương. Tooltip hiện khi học sinh hover vào ổ khoá. */
+export function CuteLock({ hint, className = "right-2 top-2" }: { hint: string; className?: string }) {
+  return (
+    <span className={`group/lock absolute z-20 ${className}`}>
+      <span className="grid h-10 w-10 place-items-center rounded-full bg-gradient-to-br from-amber-50 via-orange-100 to-amber-200 text-amber-700 shadow-[0_4px_0_#f59e0b] ring-4 ring-white transition duration-300 group-hover/lock:-translate-y-0.5 group-hover/lock:rotate-6 dark:text-amber-200 dark:ring-slate-800">
+        <Lock className="h-5 w-5" strokeWidth={3} />
+      </span>
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute bottom-[calc(100%+10px)] right-0 z-30 w-48 origin-bottom-right scale-95 rounded-2xl bg-ink px-3 py-2 text-left text-[11px] font-extrabold leading-snug text-cream opacity-0 shadow-pop transition duration-200 group-hover/lock:scale-100 group-hover/lock:opacity-100"
+      >
+        {hint}
+      </span>
+    </span>
+  );
+}
+
+export function LockToast({ message }: { message: string | null }) {
+  if (!message) return null;
+  return (
+    <div
+      role="status"
+      className="fixed bottom-6 left-1/2 z-[70] flex max-w-[min(92vw,28rem)] -translate-x-1/2 animate-pop-in items-center gap-2 rounded-full bg-ink px-5 py-3 text-sm font-extrabold text-cream shadow-pop"
+    >
+      <span aria-hidden>🔒</span>
+      <span>{message}</span>
+    </div>
   );
 }
 

@@ -16,6 +16,8 @@ export interface ILesson {
   quote: { text: string; author: string };
   objectives: string[];
   heroImage?: string;
+  /** Khối lớp của chặng (6, 7, 8, 9...). Frontend nhóm roadmap theo field này. */
+  grade: number;
   texts: ILessonText[];
   createdAt: Date;
   updatedAt: Date;
@@ -48,9 +50,19 @@ const lessonSchema = new Schema<ILesson>(
     },
     objectives: { type: [String], default: [] },
     heroImage: { type: String, trim: true },
+    grade: {
+      type: Number,
+      required: [true, "Vui lòng chọn khối lớp"],
+      default: 6,
+      min: [1, "Khối lớp phải từ 1 đến 12"],
+      max: [12, "Khối lớp phải từ 1 đến 12"],
+      validate: { validator: Number.isInteger, message: "grade phải là số nguyên" },
+    },
     texts: { type: [lessonTextSchema], default: [] },
   },
   { timestamps: true },
 );
+
+lessonSchema.index({ grade: 1, lessonId: 1 });
 
 export const Lesson = model<ILesson>("Lesson", lessonSchema);

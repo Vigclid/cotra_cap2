@@ -18,6 +18,11 @@ export interface IUser {
   /** Chỉ số cấp độ (0 → 4), tự tính lại từ `exp` mỗi khi lưu. */
   level: number;
   badges: string[];
+  /**
+   * Khối lớp hiện tại của học sinh (6, 7, 8, 9...).
+   * Chỉ có ý nghĩa với role "student". Học sinh mới mặc định là 6.
+   */
+  grade?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -47,11 +52,20 @@ const userSchema = new Schema<IUser, UserModel, IUserMethods>(
     exp: { type: Number, default: 0, min: 0 },
     level: { type: Number, default: 0, min: 0 },
     badges: { type: [String], default: [] },
+    grade: {
+      type: Number,
+      min: [1, "Khối lớp phải từ 1 đến 12"],
+      max: [12, "Khối lớp phải từ 1 đến 12"],
+      validate: {
+        validator: (value: number | null | undefined) => value == null || Number.isInteger(value),
+        message: "Khối lớp phải là số nguyên",
+      },
+    },
   },
   { timestamps: true },
 );
 
-userSchema.index({ role: 1, exp: -1 });
+userSchema.index({ role: 1, grade: 1, exp: -1 });
 
 /**
  * Hook chạy trước khi save():
@@ -59,6 +73,10 @@ userSchema.index({ role: 1, exp: -1 });
  *  - Đồng bộ `level` theo `exp` để không bao giờ lệch nhau.
  * Lưu ý: hook KHÔNG chạy với insertMany/updateOne, nên tạo user luôn dùng create()/save().
  */
+userSchema.pre("validate", function () {
+  if (this.role === "student" && this.grade == null) this.grade = 6;
+});
+
 userSchema.pre("save", async function () {
   if (this.isModified("password")) {
     this.password = await bcrypt.hash(this.password, SALT_ROUNDS);

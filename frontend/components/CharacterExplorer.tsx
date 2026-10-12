@@ -1,88 +1,307 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { BookHeart, MessageCircle, RefreshCw, Send, X } from "lucide-react";
-import { CHARACTERS, type Character } from "@/lib/characters";
 import { callAI, errorMessage } from "@/lib/api-client";
+import { useCharacters } from "@/hooks/useCharacters";
 import { useLessons } from "@/hooks/useLessons";
+import { useStudentGrade } from "@/hooks/useStudentGrade";
+import { gradeLockMessage, groupByGrade, isGradeLocked } from "@/lib/grades";
 import { toStage } from "@/lib/roadmap";
 import { MAX_CHAT_CHARS, type ChatMessage } from "@/lib/types";
+import type { CharacterSummary } from "@/types/api";
 import { Mascot, MascotLoading } from "./Mascot";
-import { BouncyButton, Card, DemoBadge, ErrorBox, Markdown } from "./ui";
+import { BouncyButton, Card, CuteLock, DemoBadge, ErrorBox, LockToast, Markdown } from "./ui";
 
-const LESSONS = [...new Set(CHARACTERS.map((c) => c.lesson))].sort((a, b) => a - b);
+/**
+ * Tên chủ điểm theo khối + số bài trong sách.
+ * `character.lesson` là "Bài N" của khối đó, không phải lessonId toàn hệ thống.
+ */
+type StageLabel = { number: number; name: string };
 
-/** Tên chủ điểm của bài (lấy từ cache GET /api/lessons), chưa tải xong thì trả undefined. */
+/** `lesson` trên nhân vật có thể là lessonId (11, 12...) hoặc số "Bài N" trong sách. */
 function useStageName() {
   const { lessons } = useLessons();
-  return (lessonId: number) => {
-    const lesson = lessons?.find((l) => l.lessonId === lessonId);
-    return lesson ? toStage(lesson).name : undefined;
-  };
+  return useMemo(() => {
+    const rows = lessons ?? [];
+    return (grade: number, lesson: number): StageLabel | undefined => {
+      const inGrade = rows.filter((item) => item.grade === grade);
+      const byId = inGrade.find((item) => item.lessonId === lesson);
+      const byTitle = inGrade.find((item) => {
+        const match = item.title.match(/^Bài\s*(\d+)/i);
+        return match !== null && Number(match[1]) === lesson;
+      });
+      const found = byId ?? byTitle ?? [...inGrade].sort((a, b) => a.lessonId - b.lessonId)[lesson - 1];
+      if (!found) return undefined;
+      const titleNumber = found.title.match(/^Bài\s*(\d+)/i);
+      const name = toStage(found).name.replace(/\s*\[cite:[^\]]*\]/gi, "").trim();
+      return { number: titleNumber ? Number(titleNumber[1]) : lesson, name };
+    };
+  }, [lessons]);
+}
+
+function pickDefaultGrade(characters: CharacterSummary[], studentGrade: number | null): number | "all" {
+  const grades = [...new Set(characters.map((character) => character.grade))].sort((a, b) => a - b);
+  if (grades.length === 0) return "all";
+  if (studentGrade === null) return grades[0];
+  if (grades.includes(studentGrade)) return studentGrade;
+  const open = grades.filter((grade) => grade <= studentGrade);
+  return open.at(-1) ?? grades[0];
+}
+
+function groupByLesson(list: CharacterSummary[]) {
+  const map = new Map<number, CharacterSummary[]>();
+  for (const character of list) {
+    const bucket = map.get(character.lesson);
+    if (bucket) bucket.push(character);
+    else map.set(character.lesson, [character]);
+  }
+  return [...map.entries()].sort((a, b) => a[0] - b[0]);
+}
+
+function FilterChip({
+  active,
+  locked = false,
+  onClick,
+  className = "",
+  children,
+}: {
+  active: boolean;
+  locked?: boolean;
+  onClick: () => void;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={`rounded-full px-3 py-1.5 text-sm font-extrabold transition duration-300 ease-bounce hover:-translate-y-0.5 ${
+        active ? "bg-violet-300 text-violet-950 shadow-soft" : locked ? "bg-amber-100 text-amber-900" : "bg-cream text-ink/70"
+      } ${className}`}
+    >
+      {children}
+    </button>
+  );
 }
 
 export function CharacterExplorer({ onSuccess }: { onSuccess: () => void }) {
   const stageName = useStageName();
+  const { characters, reload } = useCharacters();
+  const { ready, grade: studentGrade } = useStudentGrade();
+  const [pickedGrade, setPickedGrade] = useState<number | "all" | null>(null);
   const [lesson, setLesson] = useState<number | null>(null);
-  const [selected, setSelected] = useState<Character | null>(null);
-  const list = lesson === null ? CHARACTERS : CHARACTERS.filter((c) => c.lesson === lesson);
+  const [selected, setSelected] = useState<CharacterSummary | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(toastTimer.current), []);
+
+  const showToast = (message: string) => {
+    setToast(message);
+    clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2800);
+  };
+
+  const gradeOptions = useMemo(() => {
+    return groupByGrade(characters ?? []).map(([grade, list]) => ({ grade, count: list.length }));
+  }, [characters]);
+  const grade = pickedGrade ?? (characters ? pickDefaultGrade(characters, studentGrade) : "all");
+  const lessonOptions = useMemo(() => {
+    if (grade === "all" || !characters) return [];
+    return groupByLesson(characters.filter((character) => character.grade === grade)).map(([lessonNumber, list]) => {
+      const label = stageName(grade, lessonNumber);
+      return {
+        lesson: lessonNumber,
+        number: label?.number ?? lessonNumber,
+        name: label?.name,
+        count: list.length,
+      };
+    });
+  }, [characters, grade, stageName]);
+  const visible = (characters ?? []).filter(
+    (character) => (grade === "all" || character.grade === grade) && (lesson === null || character.lesson === lesson),
+  );
+  const groups = groupByGrade(visible);
+  const activeLesson = lessonOptions.find((item) => item.lesson === lesson);
+  const chooseGrade = (next: number | "all") => {
+    setPickedGrade(next);
+    setLesson(null);
+  };
+
+  const openCharacter = (character: CharacterSummary) => {
+    if (!ready) return;
+    if (isGradeLocked(studentGrade, character.grade)) {
+      showToast(gradeLockMessage(character.grade, "nhân vật"));
+      return;
+    }
+    setSelected(character);
+  };
+
+  if (!ready || !characters) {
+    return (
+      <Card className="flex flex-col items-center gap-4 py-12">
+        <Mascot loading messages={["Cô Cú đang gọi các nhân vật ra sân khấu... 🎭", "Sắp xếp theo từng khối lớp ✨"]} />
+      </Card>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      <Card className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <Card className="space-y-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-extrabold">🎭 Trò chuyện & Khám phá Nhân vật</h2>
+            <p className="text-sm font-semibold text-ink/60">
+              {studentGrade === null
+                ? "Thầy cô xem trước được mọi lớp. Chọn lớp, rồi chọn bài."
+                : `Em đang học Lớp ${studentGrade}. Chọn lớp và bài để gặp đúng nhân vật.`}
+            </p>
+          </div>
+          <button type="button" onClick={reload} aria-label="Tải lại nhân vật" className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-cream text-ink/60">
+            <RefreshCw className="h-4 w-4" />
+          </button>
+        </div>
+
         <div>
-          <h2 className="text-xl font-extrabold">🎭 Trò chuyện & Khám phá Nhân vật</h2>
-          <p className="text-sm font-semibold text-ink/60">
-            Chọn một nhân vật để nghe “chuyện chưa kể” hoặc phỏng vấn trực tiếp nhé!
-          </p>
+          <p className="mb-2 text-xs font-black uppercase tracking-wider text-ink/45">Chọn lớp</p>
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Chọn lớp">
+            <FilterChip active={grade === "all"} onClick={() => chooseGrade("all")}>
+              Tất cả lớp
+            </FilterChip>
+            {gradeOptions.map((option) => {
+              const locked = isGradeLocked(studentGrade, option.grade);
+              return (
+                <FilterChip key={option.grade} active={grade === option.grade} locked={locked && grade !== option.grade} onClick={() => chooseGrade(option.grade)}>
+                  {locked ? "🔒 " : ""}Lớp {option.grade}
+                  <span className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[11px] ${grade === option.grade ? "bg-white/40" : "bg-white/70 text-ink/50"}`}>
+                    {option.count}
+                  </span>
+                </FilterChip>
+              );
+            })}
+          </div>
         </div>
-        <div className="flex flex-wrap gap-1.5">
-          {[null, ...LESSONS].map((l) => (
-            <button
-              key={l ?? "all"}
-              onClick={() => setLesson(l)}
-              title={l === null ? undefined : stageName(l)}
-              className={`rounded-full px-3 py-1.5 text-sm font-bold transition duration-300 ease-bounce hover:-translate-y-0.5 ${
-                lesson === l ? "bg-violet-300 text-violet-950" : "bg-cream text-ink/70"
-              }`}
-            >
-              {l === null ? "Tất cả" : `Bài ${l}`}
-            </button>
-          ))}
-        </div>
+
+        {grade !== "all" && (
+          <div>
+            <p className="mb-2 text-xs font-black uppercase tracking-wider text-ink/45">Chọn bài · Lớp {grade}</p>
+            <div className="flex gap-2 overflow-x-auto pb-1" role="group" aria-label={`Chọn bài của Lớp ${grade}`}>
+              <FilterChip active={lesson === null} onClick={() => setLesson(null)} className="shrink-0 self-stretch">
+                Tất cả bài
+              </FilterChip>
+              {lessonOptions.map((option) => (
+                <button
+                  key={option.lesson}
+                  type="button"
+                  aria-pressed={lesson === option.lesson}
+                  onClick={() => setLesson(option.lesson)}
+                  className={`shrink-0 rounded-2xl px-3 py-2 text-left transition duration-300 ease-bounce hover:-translate-y-0.5 ${
+                    lesson === option.lesson ? "bg-violet-300 text-violet-950 shadow-soft" : "bg-cream text-ink/70"
+                  }`}
+                >
+                  <span className="block text-[11px] font-black uppercase tracking-wide">Bài {option.number}</span>
+                  <span className="block max-w-44 truncate text-sm font-extrabold">{option.name ?? `${option.count} nhân vật`}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <p className="text-sm font-bold text-ink/55">
+          {grade === "all"
+            ? `Đang xem mọi lớp · ${visible.length} nhân vật. Chọn một lớp để lọc theo bài.`
+            : lesson === null
+              ? `Đang xem Lớp ${grade} · tất cả bài · ${visible.length} nhân vật.`
+              : `Đang xem Lớp ${grade} · Bài ${activeLesson?.number ?? lesson}${activeLesson?.name ? `: ${activeLesson.name}` : ""} · ${visible.length} nhân vật.`}
+        </p>
       </Card>
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
-        {list.map((c, i) => (
-          <button
-            key={c.id}
-            onClick={() => setSelected(c)}
-            style={{ animationDelay: `${i * 50}ms` }}
-            className="group animate-pop-in overflow-hidden rounded-2xl bg-surface text-left shadow-soft transition duration-300 ease-bounce hover:-translate-y-2 hover:rotate-1 hover:shadow-pop focus-visible:outline-4 focus-visible:outline-violet-300"
-          >
-            {/* Ảnh minh họa placeholder */}
-            <div className={`relative grid aspect-[4/3] place-items-center bg-gradient-to-br ${c.gradient}`}>
-              <span className="text-6xl drop-shadow-md transition duration-300 ease-bounce group-hover:scale-125">
-                {c.emoji}
-              </span>
-              <span className="absolute left-2 top-2 rounded-full bg-white/80 px-2 py-0.5 text-[11px] font-extrabold text-slate-700">
-                Bài {c.lesson}
-              </span>
+      {groups.length === 0 && (
+        <Card className="py-10 text-center">
+          <p className="font-extrabold">Chưa có nhân vật cho bộ lọc này</p>
+        </Card>
+      )}
+
+      {groups.map(([grade, list]) => {
+        const lockedGrade = isGradeLocked(studentGrade, grade);
+        return (
+          <section key={grade} className="space-y-3">
+            <div className="flex items-center justify-between gap-3 px-1">
+              <h3 className="text-lg font-black">Nhân vật Lớp {grade}</h3>
+              {lockedGrade && (
+                <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-extrabold text-amber-800">
+                  🔒 {gradeLockMessage(grade, "nhân vật")}
+                </span>
+              )}
             </div>
-            <div className="p-3.5">
-              <h3 className="font-extrabold">{c.name}</h3>
-              <p className="line-clamp-1 text-xs font-bold text-ink/50">
-                {c.work} · {c.author}
-              </p>
-              <p className="mt-1.5 line-clamp-2 text-sm text-ink/70">{c.tagline}</p>
+            <div className="space-y-5">
+              {groupByLesson(list).map(([lessonNumber, lessonCharacters]) => {
+                const label = stageName(grade, lessonNumber);
+                const shownNumber = label?.number ?? lessonNumber;
+                return (
+                  <div key={lessonNumber} className="space-y-3">
+                    <h4 className="px-1 text-sm font-black text-ink/70">
+                      Bài {shownNumber}
+                      {label?.name ? ` · ${label.name}` : ""}
+                      <span className="ml-2 font-bold text-ink/40">{lessonCharacters.length} nhân vật</span>
+                    </h4>
+                    <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
+                      {lessonCharacters.map((c, i) => {
+                        const locked = isGradeLocked(studentGrade, c.grade);
+                        const hint = gradeLockMessage(c.grade, "nhân vật");
+                        return (
+                          <div key={c.id} className="relative" style={{ animationDelay: `${i * 50}ms` }}>
+                            <button
+                              type="button"
+                              disabled={locked}
+                              onClick={() => openCharacter(c)}
+                              className={`group w-full animate-pop-in overflow-hidden rounded-2xl bg-surface text-left shadow-soft transition duration-300 ease-bounce focus-visible:outline-4 focus-visible:outline-violet-300 disabled:cursor-not-allowed ${
+                                locked ? "grayscale" : "hover:-translate-y-2 hover:rotate-1 hover:shadow-pop"
+                              }`}
+                            >
+                              <div className={`relative grid aspect-[4/3] place-items-center bg-gradient-to-br ${c.gradient}`}>
+                                <span className={`text-6xl drop-shadow-md transition duration-300 ease-bounce ${locked ? "opacity-40" : "group-hover:scale-125"}`}>
+                                  {c.emoji}
+                                </span>
+                                <span className="absolute left-2 top-2 max-w-[calc(100%-1rem)] truncate rounded-full bg-white/80 px-2 py-0.5 text-[11px] font-extrabold text-slate-700">
+                                  Lớp {c.grade} · Bài {stageName(c.grade, c.lesson)?.number ?? c.lesson}
+                                </span>
+                              </div>
+                              <div className="p-3.5">
+                                <h3 className="font-extrabold">{c.name}</h3>
+                                <p className="line-clamp-1 text-xs font-bold text-ink/50">
+                                  {c.work} · {c.author}
+                                </p>
+                                <p className="mt-1.5 line-clamp-2 text-sm text-ink/70">{c.tagline}</p>
+                              </div>
+                            </button>
+                            {locked && (
+                              <button
+                                type="button"
+                                onClick={() => showToast(hint)}
+                                aria-label={hint}
+                                className="absolute inset-0 z-10 cursor-not-allowed rounded-2xl"
+                              >
+                                <CuteLock hint={hint} />
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-          </button>
-        ))}
-      </div>
+          </section>
+        );
+      })}
 
       {selected && (
         <CharacterModal key={selected.id} character={selected} onClose={() => setSelected(null)} onSuccess={onSuccess} />
       )}
+      <LockToast message={toast} />
     </div>
   );
 }
@@ -96,12 +315,13 @@ function CharacterModal({
   onClose,
   onSuccess,
 }: {
-  character: Character;
+  character: CharacterSummary;
   onClose: () => void;
   onSuccess: () => void;
 }) {
   const [tab, setTab] = useState<ModalTab>("story");
   const stageName = useStageName();
+  const stage = stageName(c.grade, c.lesson);
 
   // Esc để đóng + khóa cuộn trang nền
   useEffect(() => {
@@ -137,8 +357,8 @@ function CharacterModal({
               {c.name}
             </h2>
             <p className="truncate text-sm font-bold opacity-75">
-              {c.work} · {c.author} · Bài {c.lesson}
-              {stageName(c.lesson) && `: ${stageName(c.lesson)}`}
+              {c.work} · {c.author} · Lớp {c.grade} · Bài {stage?.number ?? c.lesson}
+              {stage?.name ? `: ${stage.name}` : ""}
             </p>
           </div>
           <button
@@ -182,7 +402,7 @@ function CharacterModal({
   );
 }
 
-function StoryPanel({ character: c, onSuccess }: { character: Character; onSuccess: () => void }) {
+function StoryPanel({ character: c, onSuccess }: { character: CharacterSummary; onSuccess: () => void }) {
   const [story, setStory] = useState<string | null>(null);
   const [demo, setDemo] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -254,7 +474,7 @@ function StoryPanel({ character: c, onSuccess }: { character: Character; onSucce
   );
 }
 
-function ChatPanel({ character: c, onSuccess }: { character: Character; onSuccess: () => void }) {
+function ChatPanel({ character: c, onSuccess }: { character: CharacterSummary; onSuccess: () => void }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
