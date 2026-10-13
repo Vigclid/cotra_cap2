@@ -67,7 +67,7 @@ const TABS: NavItem<Tab>[] = [
 /** Các tab không cần cột Lịch sử bên phải. */
 const FULL_WIDTH_TABS: Tab[] = ["roadmap", "characters", "games"];
 
-/** Khung ứng dụng dùng chung cho "/" và "/roadmap" – chỉ khác tab mở mặc định. Yêu cầu đăng nhập. */
+/** Khung ứng dụng sau khi đăng nhập (màn /roadmap). Yêu cầu phiên hợp lệ. */
 export function AppShell({ initialTab }: { initialTab: Tab }) {
   return (
     <AuthGate>

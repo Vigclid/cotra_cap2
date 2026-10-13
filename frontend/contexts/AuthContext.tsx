@@ -61,7 +61,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       resetCharacters();
       setUser(null);
       setStatus("unauthenticated");
-      if (redirect && window.location.pathname !== "/login") router.replace("/login");
+      // Trang công khai (landing, đăng nhập, đăng ký) không bị kéo về form khi hết phiên.
+      const path = window.location.pathname;
+      const isPublic = path === "/" || path === "/login" || path === "/register";
+      if (redirect && !isPublic) router.replace("/login");
     },
     [router],
   );

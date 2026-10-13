@@ -67,6 +67,9 @@ export default function RegisterPage() {
       <Background />
       <div className="w-full max-w-md animate-pop-in">
         <div className="mb-6 flex flex-col items-center text-center">
+          <Link href="/" className="mb-4 text-sm font-extrabold text-ink/55 transition hover:text-violet-600 dark:hover:text-violet-300">
+            ← Về trang chủ
+          </Link>
           <span className="grid h-16 w-16 place-items-center rounded-3xl bg-gradient-to-br from-pink-300 to-sky-300 text-4xl shadow-soft">
             🚀
           </span>

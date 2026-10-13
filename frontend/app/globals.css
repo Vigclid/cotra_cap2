@@ -172,6 +172,24 @@ body {
   transition: background-color 0.3s, color 0.3s;
 }
 
+/* Landing luôn dùng bảng màu pastel sáng, không theo dark mode của ứng dụng. */
+.landing-light {
+  --color-cream: #fff8e7;
+  --color-surface: #ffffff;
+  --color-paper: #fdfbf7;
+  --color-sky-pastel: #e0f2fe;
+  --color-pink-pastel: #fce7f3;
+  --color-mint-pastel: #d1fae5;
+  --color-peach-pastel: #ffedd5;
+  --color-lemon-pastel: #fef9c3;
+  --color-ink: #3f3d56;
+  --shadow-soft: 0 8px 24px -8px rgb(63 61 86 / 0.18);
+  --shadow-pop: 0 14px 30px -10px rgb(63 61 86 / 0.3);
+  color: #3f3d56;
+  color-scheme: light;
+  background-color: #fff8e7;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
