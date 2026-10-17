@@ -1,7 +1,8 @@
 /**
- * Danh sách nhân vật văn học trong Ngữ Văn 6 – bộ sách Kết nối tri thức với cuộc sống.
- * `persona` chỉ dùng ở server để dựng System Prompt – client không gửi persona lên.
+ * Bộ nhân vật Lớp 6 gắn sẵn: fallback khi API trống, và `persona` chi tiết cho system prompt.
+ * Danh sách thật nằm ở collection `characters`. `getCharacter` tra theo `slug` trên backend.
  */
+import { API_URL } from "@/utils/apiClient";
 
 export type Character = {
   id: string;
@@ -150,4 +151,93 @@ export const CHARACTERS: Character[] = [
   },
 ];
 
-export const getCharacter = (id: string) => CHARACTERS.find((c) => c.id === id);
+const LOCAL_PERSONA = new Map(CHARACTERS.map((character) => [character.id, character.persona]));
+
+/** Dấu vết trích dẫn sót khi nhập liệu, ví dụ `[cite: 28, 34]`. */
+const CITE_MARK = /\s*\[cite:[^\]]*\]/gi;
+
+const cleanText = (value: string) => value.replace(CITE_MARK, "").replace(/[ \t]{2,}/g, " ").trim();
+
+function gradeLabel(grade: unknown) {
+  if (typeof grade === "number" && Number.isInteger(grade)) return `Lớp ${grade}`;
+  const text = typeof grade === "string" ? grade.trim() : "";
+  if (!text) return "Lớp 6";
+  if (/lớp/i.test(text)) return text;
+  const digits = text.replace(/\D/g, "");
+  return digits ? `Lớp ${digits}` : text;
+}
+
+/** Backend chưa có route theo slug thì dò trong GET /api/characters — cùng collection. */
+async function findCharacterInList(headers: HeadersInit, slug: string) {
+  const res = await fetch(`${API_URL}/api/characters`, { headers, cache: "no-store" });
+  if (res.status === 401) return "unauthorized" as const;
+  if (!res.ok) throw new Error(`Không đọc được danh sách nhân vật (${res.status})`);
+  const list = (await res.json().catch(() => null))?.characters;
+  if (!Array.isArray(list)) return undefined;
+  const found = list.find((item) => {
+    if (!item || typeof item !== "object") return false;
+    const record = item as Record<string, unknown>;
+    return record.id === slug || record.slug === slug;
+  });
+  return found && typeof found === "object" ? (found as Record<string, unknown>) : undefined;
+}
+
+/**
+ * Tra nhân vật theo slug trong database (GET /api/characters/:slug).
+ * Persona chi tiết của Lớp 6 vẫn lấy từ bộ gắn sẵn nếu slug khớp; nhân vật mới dựng hồ sơ từ tagline.
+ */
+export async function getCharacter(id: string, authorization: string | null): Promise<Character | "unauthorized" | null> {
+  const slug = id.trim();
+  if (!slug) return null;
+  if (!authorization) return "unauthorized";
+
+  const headers = { Authorization: authorization };
+  const res = await fetch(`${API_URL}/api/characters/${encodeURIComponent(slug)}`, { headers, cache: "no-store" });
+  if (res.status === 401) return "unauthorized";
+  if (!res.ok && res.status !== 404) throw new Error(`Không đọc được nhân vật (${res.status})`);
+
+  let raw = res.ok ? ((await res.json().catch(() => null))?.character as Record<string, unknown> | undefined) : undefined;
+  if (!res.ok) {
+    const message = String((await res.json().catch(() => null))?.message ?? "");
+    // Backend cũ chưa có GET /:slug — 404 của route khác với 404 "không có nhân vật".
+    if (!message.startsWith("Không tìm thấy endpoint")) return null;
+    const listed = await findCharacterInList(headers, slug);
+    if (listed === "unauthorized") return "unauthorized";
+    raw = listed;
+  }
+
+  const foundId = typeof raw?.id === "string" ? raw.id : typeof raw?.slug === "string" ? raw.slug : "";
+  const name = typeof raw?.name === "string" ? raw.name.trim() : "";
+  if (!foundId || !name) return null;
+
+  const work = typeof raw?.work === "string" ? raw.work.trim() : "";
+  const author = typeof raw?.author === "string" ? raw.author.trim() : "";
+  const grade = gradeLabel(raw?.grade);
+  const tagline = cleanText(typeof raw?.tagline === "string" ? raw.tagline : "");
+  const sampleQuestions = Array.isArray(raw?.sampleQuestions)
+    ? raw.sampleQuestions.filter((item): item is string => typeof item === "string").map(cleanText).filter(Boolean)
+    : [];
+  const persona =
+    LOCAL_PERSONA.get(foundId) ??
+    [
+      tagline,
+      `${name} là nhân vật trong tác phẩm "${work}" của ${author}, chương trình Ngữ Văn ${grade}.`,
+      sampleQuestions.length ? `Học sinh thường hỏi: ${sampleQuestions.join(" / ")}` : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+  return {
+    id: foundId,
+    name,
+    work,
+    author,
+    grade,
+    lesson: typeof raw?.lesson === "number" ? raw.lesson : 0,
+    emoji: typeof raw?.emoji === "string" && raw.emoji.trim() ? raw.emoji.trim() : "📖",
+    gradient: typeof raw?.gradient === "string" && raw.gradient.trim() ? raw.gradient.trim() : "from-slate-200 to-slate-300",
+    tagline,
+    persona,
+    sampleQuestions,
+  };
+}

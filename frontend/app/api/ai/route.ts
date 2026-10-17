@@ -69,7 +69,8 @@ export async function POST(req: Request) {
 
       /* ---------------- Chuyện chưa kể ---------------- */
       case "character_story": {
-        const character = getCharacter(str(payload.characterId));
+        const character = await lookupCharacter(req, str(payload.characterId));
+        if (character instanceof Response) return character;
         if (!character) return bad("Không tìm thấy nhân vật này!");
 
         if (demo) return ok({ story: mockStory(character) }, 1200);
@@ -83,7 +84,8 @@ export async function POST(req: Request) {
 
       /* ---------------- Hỏi đáp nhập vai ---------------- */
       case "character_chat": {
-        const character = getCharacter(str(payload.characterId));
+        const character = await lookupCharacter(req, str(payload.characterId));
+        if (character instanceof Response) return character;
         if (!character) return bad("Không tìm thấy nhân vật này!");
 
         const messages: ChatMessage[] = Array.isArray(payload.messages) ? payload.messages : [];
@@ -161,6 +163,15 @@ export async function POST(req: Request) {
 const MAX_BODY_CHARS = 16 * 1024;
 
 const str = (v: unknown) => (typeof v === "string" ? v : "");
+
+/** `getCharacter` trả "unauthorized" khi JWT thiếu hoặc hết hạn — cùng cách xử lý với lesson_hint. */
+async function lookupCharacter(req: Request, characterId: string) {
+  const found = await getCharacter(characterId, req.headers.get("authorization"));
+  if (found === "unauthorized") {
+    return NextResponse.json({ error: "Phiên đăng nhập đã hết hạn, em đăng nhập lại nhé!" }, { status: 401 });
+  }
+  return found;
+}
 
 /**
  * Câu hỏi luôn được tra từ Backend theo chỉ số (client không gửi nội dung câu hỏi lên),
